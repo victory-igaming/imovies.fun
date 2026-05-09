@@ -1,6 +1,188 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-## Getting Started
+
+# FULL PROJECT STRUCTURE
+imovies-fun/
+│
+├── app/
+│   ├── (home)/
+│   │   ├── page.tsx
+│   │   ├── loading.tsx
+│   │   └── error.tsx
+│   │
+│   ├── movie/
+│   │   └── [id]/
+│   │       ├── page.tsx
+│   │       ├── loading.tsx
+│   │       └── error.tsx
+│   │
+│   ├── watch/
+│   │   └── [id]/
+│   │       ├── page.tsx
+│   │       └── loading.tsx
+│   │
+│   ├── search/
+│   │   └── page.tsx
+│   │
+│   ├── favorites/
+│   │   └── page.tsx
+│   │
+│   ├── library/
+│   │   └── page.tsx
+│   │
+│   ├── api/
+│   │   ├── tmdb/
+│   │   │   └── route.ts
+│   │   │
+│   │   ├── ads/
+│   │   │   └── route.ts
+│   │   │
+│   │   └── playback/
+│   │       └── route.ts
+│   │
+│   ├── globals.css
+│   ├── layout.tsx
+│   └── providers.tsx
+│
+├── components/
+│   ├── layout/
+│   │   ├── Sidebar.tsx
+│   │   ├── Topbar.tsx
+│   │   ├── MobileNav.tsx
+│   │   └── AppShell.tsx
+│   │
+│   ├── movie/
+│   │   ├── MovieCard.tsx
+│   │   ├── MovieGrid.tsx
+│   │   ├── HeroBanner.tsx
+│   │   ├── GenreBadge.tsx
+│   │   ├── RatingBadge.tsx
+│   │   └── TrailerModal.tsx
+│   │
+│   ├── player/
+│   │   ├── VideoPlayer.tsx
+│   │   ├── PlayerControls.tsx
+│   │   ├── TheaterMode.tsx
+│   │   ├── SubtitleSelector.tsx
+│   │   ├── ContinueWatching.tsx
+│   │   └── AdOverlayPlayer.tsx
+│   │
+│   ├── ads/
+│   │   ├── AdsenseBanner.tsx
+│   │   ├── SidebarAds.tsx
+│   │   ├── MobileAds.tsx
+│   │   └── SponsoredCard.tsx
+│   │
+│   ├── ui/
+│   │   ├── Button.tsx
+│   │   ├── GlassCard.tsx
+│   │   ├── Skeleton.tsx
+│   │   ├── Modal.tsx
+│   │   ├── Input.tsx
+│   │   └── Loader.tsx
+│   │
+│   └── common/
+│       ├── Logo.tsx
+│       ├── ThemeToggle.tsx
+│       └── InfiniteScroll.tsx
+│
+├── features/
+│   ├── tmdb/
+│   │   ├── hooks.ts
+│   │   ├── queries.ts
+│   │   └── tmdb.types.ts
+│   │
+│   ├── ads/
+│   │   ├── ad-manager.ts
+│   │   ├── ad-selector.ts
+│   │   └── useAdInjection.ts
+│   │
+│   ├── player/
+│   │   ├── playback-manager.ts
+│   │   ├── continue-watch.ts
+│   │   └── subtitle-manager.ts
+│   │
+│   └── search/
+│       ├── useSearch.ts
+│       ├── search-store.ts
+│       └── filters.ts
+│
+├── hooks/
+│   ├── useDebounce.ts
+│   ├── useLocalStorage.ts
+│   ├── useInfiniteMovies.ts
+│   ├── useKeyboardShortcut.ts
+│   └── useVisibilityPause.ts
+│
+├── services/
+│   ├── tmdb.service.ts
+│   ├── player.service.ts
+│   ├── ads.service.ts
+│   └── analytics.service.ts
+│
+├── store/
+│   ├── player.store.ts
+│   ├── favorites.store.ts
+│   ├── watchlist.store.ts
+│   ├── theme.store.ts
+│   └── ui.store.ts
+│
+├── config/
+│   ├── site.ts
+│   ├── ads-config.json
+│   ├── navigation.ts
+│   └── theme.ts
+│
+├── lib/
+│   ├── prisma.ts
+│   ├── react-query.ts
+│   ├── tmdb.ts
+│   ├── validators.ts
+│   └── rate-limit.ts
+│
+├── types/
+│   ├── movie.ts
+│   ├── player.ts
+│   ├── ads.ts
+│   └── api.ts
+│
+├── utils/
+│   ├── format.ts
+│   ├── cn.ts
+│   ├── image.ts
+│   ├── storage.ts
+│   └── time.ts
+│
+├── prisma/
+│   ├── schema.prisma
+│   └── migrations/
+│
+├── public/
+│   ├── logo/
+│   ├── ads/
+│   │   ├── ad1.mp4
+│   │   ├── ad2.mp4
+│   │   └── ad3.mp4
+│   │
+│   ├── placeholders/
+│   └── icons/
+│
+├── styles/
+│   ├── animations.css
+│   ├── player.css
+│   └── scrollbar.css
+│
+├── middleware.ts
+├── next.config.js
+├── tailwind.config.ts
+├── tsconfig.json
+├── postcss.config.js
+├── package.json
+├── .env.local
+└── README.md
+
+
+
 
 First, run the development server:
 
