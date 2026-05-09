@@ -5,24 +5,23 @@ import MovieCard from "@/components/movie/MovieCard";
 
 import AdsenseBanner from "@/components/ads/AdsenseBanner";
 
- import dynamic from "next/dynamic"; const MoviePlayer = dynamic( () => import( "@/components/player/MoviePlayer" ), { ssr: false, } );
+
+import ClientMoviePlayer from "@/components/player/ClientMoviePlayer";
+
+
 
 import {
   getMovieDetails,
   getTrendingMovies,
 } from "@/services/tmdb";
 
-interface Props {
-  params: {
-    id: string;
-  };
-}
+interface Props { params: Promise<{ id: string; }>; }
 
 export default async function WatchPage({
   params,
 }: Props) {
-  const movie = await getMovieDetails(params.id);
-
+  const movie = await getMovieDetails((await params).id);
+  console.log(movie);
   const recommendedMovies =
     await getTrendingMovies();
 
@@ -52,8 +51,9 @@ export default async function WatchPage({
                 </p>
               </div>
 
-              {/* VIDEO PLAYER */}
-              <MoviePlayer movie={movie} />
+              {/* VIDEO PLAYER */}            
+              <ClientMoviePlayer movie={movie} />
+ 
 
               {/* MOVIE DESCRIPTION */}
               <div
@@ -79,8 +79,9 @@ export default async function WatchPage({
 
             {/* RIGHT SIDEBAR */}
             <aside className="space-y-6">
+              
               {/* ADSENSE */}
-              <AdsenseBanner />
+              <AdsenseBanner adSlot="1234567890" className="h-[600px]" />
 
               {/* SPONSORED */}
               <div
@@ -138,7 +139,7 @@ export default async function WatchPage({
                 <div className="space-y-5">
                   {recommendedMovies
                     .slice(0, 4)
-                    .map((movie) => (
+                    .map((movie:any) => (
                       <MovieCard
                         key={movie.id}
                         movie={movie}

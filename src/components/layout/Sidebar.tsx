@@ -3,6 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useUIStore,} from "@/store/ui.store";
+
 
 import {
   Home,
@@ -49,6 +51,8 @@ const navItems = [
 export default function Sidebar() {
   const pathname = usePathname();
 
+  const { sidebarOpen,toggleSidebar,} = useUIStore();
+
   return (
     <aside className="fixed left-0 top-0 z-50 h-screen w-20 md:w-64 bg-[#081018]/95 backdrop-blur-xl border-r border-white/10 p-4 flex flex-col">
       {/* LOGO */}
@@ -58,9 +62,10 @@ export default function Sidebar() {
       >
         <div className="relative w-12 h-12">
           <Image
-            src="/logo.png"
+            src={"/logos/logo.png"}
             alt="iMovies"
             fill
+            sizes="144px"
             className="object-contain"
           />
         </div>

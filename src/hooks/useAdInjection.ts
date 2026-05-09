@@ -1,7 +1,8 @@
 "use client";
 
+
+
 import {
-  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -10,153 +11,173 @@ import {
 
 import ads from "@/config/ads-config.json";
 
-interface Ad {
-  id: number;
-  title: string;
-  videoUrl: string;
-  duration: number;
-}
-
 interface Props {
   currentTime: number;
+
+  duration: number;
+
   onPauseMovie: () => void;
+
   onResumeMovie: () => void;
 }
 
 export default function useAdInjection({
   currentTime,
+  duration,
   onPauseMovie,
   onResumeMovie,
 }: Props) {
-  const [showAd, setShowAd] = useState(false);
+  const [showAd, setShowAd] =
+    useState(false);
 
   const [currentAd, setCurrentAd] =
-    useState<Ad | null>(null);
+    useState<any>(null);
 
   const [adCountdown, setAdCountdown] =
-    useState(10);
+    useState(0);
 
-  const adTimerRef = useRef<NodeJS.Timeout>();
+  const playedAdsRef = useRef<
+    number[]
+  >([]);
 
-  const lastAdBreakRef = useRef(0);
+  /* TEST MODE */ 
+  const TEST_AD_MODE = true;
 
-  const adPlayingRef = useRef(false);
+  /* AD SCHEDULE */
+  
+const adSchedule = useMemo(() => {
+  /* TEST MODE */
+  if (TEST_AD_MODE) {
+    return [
+      60,  // 1 min
+      120, // 2 min
+      180, // 3 min
+      240, // 4 min
+      300, // 5 min
+    ];
+  }
 
-  const tabVisibleRef = useRef(true);
+  /* PRODUCTION MODE */
+  if (!duration) return [];
 
-  /* RANDOM AD */
-  const getRandomAd = useCallback(() => {
-    const randomIndex = Math.floor(
-      Math.random() * ads.length
+  const schedule: number[] = [];
+
+  /*
+    OTT STRATEGY
+
+    20m  -> 1 ad
+    60m  -> 2 ads
+    120m -> 4 ads
+    180m -> 6 ads
+  */
+
+  let adCount = 1;
+
+  if (duration >= 3600) {
+    adCount = 2;
+  }
+
+  if (duration >= 7200) {
+    adCount = 4;
+  }
+
+  if (duration >= 10800) {
+    adCount = 6;
+  }
+
+  const spacing =
+    duration / (adCount + 1);
+
+  for (
+    let i = 1;
+    i <= adCount;
+    i++
+  ) {
+    schedule.push(
+      Math.floor(spacing * i)
     );
+  }
 
-    return ads[randomIndex];
+  return schedule;
+}, [duration]);
+
+  /* PREROLL */
+  useEffect(() => {
+    startAd(ads[0]);
   }, []);
 
-  /* START AD */
-  const startAd = useCallback(() => {
-    if (adPlayingRef.current) return;
+  /* MIDROLL */
+  useEffect(() => {
+    adSchedule.forEach((time) => {
+      const alreadyPlayed =
+        playedAdsRef.current.includes(
+          time
+        );
 
-    adPlayingRef.current = true;
+      if (
+        currentTime >= time &&
+        !alreadyPlayed
+      ) {
+        playedAdsRef.current.push(
+          time
+        );
 
-    const selectedAd = getRandomAd();
+        const randomAd =
+          ads[
+            Math.floor(
+              Math.random() *
+                ads.length
+            )
+          ];
 
-    setCurrentAd(selectedAd);
+        startAd(randomAd);
+      }
+    });
+  }, [currentTime, adSchedule]);
+
+  /* PLAY AD */
+  const startAd = (ad: any) => {
+    setCurrentAd(ad);
 
     setShowAd(true);
 
-    setAdCountdown(selectedAd.duration);
+    setAdCountdown(ad.duration);
 
     onPauseMovie();
 
-    let remaining = selectedAd.duration;
+    let countdown = ad.duration;
 
-    adTimerRef.current = setInterval(() => {
-      if (!tabVisibleRef.current) return;
+    const timer = setInterval(() => {
+      countdown--;
 
-      remaining--;
+      setAdCountdown(countdown);
 
-      setAdCountdown(remaining);
-
-      if (remaining <= 0) {
-        clearInterval(adTimerRef.current);
+      if (countdown <= 0) {
+        clearInterval(timer);
 
         setShowAd(false);
-
-        setCurrentAd(null);
-
-        adPlayingRef.current = false;
 
         onResumeMovie();
       }
     }, 1000);
-  }, [
-    getRandomAd,
-    onPauseMovie,
-    onResumeMovie,
-  ]);
+  };
 
-  /* END AD MANUALLY */
-  const onAdFinished = useCallback(() => {
-    clearInterval(adTimerRef.current);
-
+  /* MANUAL CLOSE */
+  const onAdFinished = () => {
     setShowAd(false);
 
-    setCurrentAd(null);
-
-    adPlayingRef.current = false;
-
     onResumeMovie();
-  }, [onResumeMovie]);
-
-  /* CHECK AD BREAK */
-  useEffect(() => {
-    if (showAd) return;
-
-    const nextBreak =
-      lastAdBreakRef.current + 90;
-
-    if (
-      currentTime >= nextBreak &&
-      currentTime > 0
-    ) {
-      lastAdBreakRef.current = currentTime;
-
-      startAd();
-    }
-  }, [currentTime, showAd, startAd]);
-
-  /* TAB VISIBILITY */
-  useEffect(() => {
-    const handleVisibility = () => {
-      tabVisibleRef.current =
-        !document.hidden;
-    };
-
-    document.addEventListener(
-      "visibilitychange",
-      handleVisibility
-    );
-
-    return () => {
-      document.removeEventListener(
-        "visibilitychange",
-        handleVisibility
-      );
-    };
-  }, []);
-
-  /* CLEANUP */
-  useEffect(() => {
-    return () => {
-      clearInterval(adTimerRef.current);
-    };
-  }, []);
-
+  };
+const nextAdTime = adSchedule.find( (time) => time > currentTime ) || null;
   return {
     showAd,
     currentAd,
     adCountdown,
     onAdFinished,
+    
+    /* DEBUG */ 
+    adSchedule, 
+    nextAdTime,
+
   };
 }

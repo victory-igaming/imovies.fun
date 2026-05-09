@@ -55,6 +55,7 @@ export default async function HomePage() {
         <Header />
 
         <div className="p-4 md:p-8">
+          
           {/* HERO */}
           <HeroBanner movie={featuredMovie} />
 
@@ -76,10 +77,11 @@ export default async function HomePage() {
                 gap-5
               "
             >
-              {movies.map((movie: any) => (
+              {movies.map((movie: any, index: number) => (
                 <MovieCard
                   key={movie.id}
                   movie={movie}
+                  priority={index < 2}
                 />
               ))}
             </div>

@@ -4,7 +4,9 @@ import { Inter } from "next/font/google";
 
 import "@/app/globals.css";
 
-import MobileNav from "@/components/layout/Mobilenav";
+import MobileNav from "@/components/layout/MobileNav";
+
+import Providers from "./providers";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -18,7 +20,7 @@ export const metadata: Metadata = {
 };
 <script
   async
-  src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=YOUR_ADSENSE_CLIENT_ID"
+  src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=pub-7209701250707799"
   crossOrigin="anonymous"
 />
 export default function RootLayout({
@@ -27,11 +29,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body
+        suppressHydrationWarning
         className={`${inter.variable} font-sans cinematic-bg`}
       >
-        {children}
+       <Providers> {children} </Providers>
 
         {/* MOBILE NAV */}
         <MobileNav />

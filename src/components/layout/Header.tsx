@@ -2,6 +2,16 @@
 
 import { useEffect, useState } from "react";
 
+import Image from "next/image";
+
+import Link from "next/link";
+
+import { useRouter } from "next/navigation";
+
+import { searchMovies } from "@/services/tmdb";
+
+
+
 import {
   Bell,
   Search,
@@ -10,6 +20,17 @@ import {
 
 export default function Header() {
   const [openSearch, setOpenSearch] = useState(false);
+
+  const router = useRouter();
+
+  const [query, setQuery] = useState("");
+
+  const [results, setResults] = useState<any[]>([]);
+
+  const [loading, setLoading] = useState(false);
+ 
+
+
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -28,6 +49,45 @@ export default function Header() {
       window.removeEventListener("keydown", down);
     };
   }, []);
+
+
+useEffect(() => {
+  const fetchResults =
+    async () => {
+      if (!query.trim()) {
+        setResults([]);
+
+        return;
+      }
+
+      try {
+        setLoading(true);
+
+        const data =
+          await searchMovies(
+            query
+          );
+
+        setResults(
+          data.slice(0, 6)
+        );
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+  const debounce =
+    setTimeout(() => {
+      fetchResults();
+    }, 400);
+
+  return () =>
+    clearTimeout(debounce);
+}, [query]);
+ 
+
 
   return (
     <header
@@ -74,31 +134,49 @@ export default function Header() {
                 text-gray-400
               "
             />
+ 
+<input
+  type="text"
+  placeholder="Search movies, TV shows..."
+  value={query}
+  onChange={(e) =>
+    setQuery(e.target.value)
+  }
+  onKeyDown={(e) => {
+    if (
+      e.key === "Enter"
+    ) {
+      router.push(
+        `/search/${encodeURIComponent(
+          query
+        )}`
+      );
 
-            <input
-              type="text"
-              placeholder="Search movies, TV shows..."
-              className="
-                w-full
-                rounded-2xl
-                border
-                border-white/10
-                bg-white/5
-                py-4
-                pl-12
-                pr-24
-                text-sm
-                text-white
-                outline-none
-                backdrop-blur-xl
-                transition-all
-                duration-300
-                placeholder:text-gray-500
-                focus:border-cyan-400/50
-                focus:bg-white/10
-                focus:shadow-[0_0_30px_rgba(0,210,255,0.15)]
-              "
-            />
+      setResults([]);
+    }
+  }}
+  className="
+    w-full
+    rounded-3xl
+    border
+    border-white/10
+    bg-white/5
+    py-5
+    pl-14
+    pr-6
+    text-lg
+    text-white
+    outline-none
+    backdrop-blur-xl
+    transition-all
+    duration-300
+    placeholder:text-gray-500
+    focus:border-cyan-400/50
+    focus:bg-white/10
+    focus:shadow-[0_0_30px_rgba(0,210,255,0.15)]
+  "
+/>
+ 
 
             {/* CTRL + K */}
             <div
@@ -139,6 +217,7 @@ export default function Header() {
               border-white/10
               text-white
             "
+          title="Search"
           >
             <Search size={20} />
           </button>
@@ -165,6 +244,7 @@ export default function Header() {
               hover:bg-white/10
               hover:shadow-[0_0_25px_rgba(0,210,255,0.15)]
             "
+          title="Notifications"
           >
             <Bell size={20} />
 
@@ -200,6 +280,7 @@ export default function Header() {
               duration-300
               hover:bg-white/10
             "
+          title="Profile"
           >
             {/* AVATAR */}
             <div

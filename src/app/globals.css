@@ -5,33 +5,45 @@
 /* ROOT VARIABLES */
 :root {
   --background: #050816;
+
   --card: #0b1120;
 
   --primary: #00d2ff;
+
   --secondary: #007cf0;
 
   --text: #ffffff;
+
   --muted: #9ca3af;
 
   --border: rgba(255, 255, 255, 0.08);
-
-  --glow:
-    0 0 30px rgba(0, 210, 255, 0.35);
 }
 
-/* BASE */
+/* HTML */
 html {
   scroll-behavior: smooth;
 }
 
+/* BODY */
 body {
-  background: var(--background);
+  background:
+    radial-gradient(
+      circle at top left,
+      rgba(0, 210, 255, 0.12),
+      transparent 30%
+    ),
+    radial-gradient(
+      circle at bottom right,
+      rgba(0, 124, 240, 0.12),
+      transparent 30%
+    ),
+    var(--background);
 
   color: var(--text);
 
-  font-family: var(--font-inter);
-
   overflow-x: hidden;
+
+  font-family: var(--font-inter);
 }
 
 /* SCROLLBAR */
@@ -61,9 +73,10 @@ body {
   );
 }
 
-/* TEXT SELECTION */
+/* SELECTION */
 ::selection {
   background: rgba(0, 210, 255, 0.35);
+
   color: white;
 }
 
@@ -81,16 +94,8 @@ body {
 
   /* GLOW */
   .shadow-glow {
-    box-shadow: var(--glow);
-  }
-
-  /* PRIMARY GRADIENT */
-  .primary-gradient {
-    background: linear-gradient(
-      to right,
-      #00d2ff,
-      #007cf0
-    );
+    box-shadow:
+      0 0 30px rgba(0, 210, 255, 0.35);
   }
 
   /* TEXT GRADIENT */
@@ -106,21 +111,7 @@ body {
     -webkit-text-fill-color: transparent;
   }
 
-  /* HIDE SCROLLBAR */
-  .hide-scrollbar::-webkit-scrollbar {
-    display: none;
-  }
-
-  .hide-scrollbar {
-    -ms-overflow-style: none;
-
-    scrollbar-width: none;
-  }
-}
-
-/* COMPONENTS */
-@layer components {
-  /* BUTTON */
+  /* PRIMARY BUTTON */
   .btn-primary {
     @apply rounded-2xl
     px-6
@@ -142,16 +133,16 @@ body {
       0 0 30px rgba(0, 210, 255, 0.35);
   }
 
+  /* SECONDARY BUTTON */
   .btn-secondary {
     @apply rounded-2xl
     border
     border-white/10
     bg-white/5
-    backdrop-blur-xl
     px-6
     py-3
-    font-semibold
     text-white
+    backdrop-blur-xl
     transition-all
     duration-300
     hover:bg-white/10;
@@ -183,22 +174,22 @@ body {
     focus:border-cyan-400/50
     focus:bg-white/10;
   }
+
+  /* HIDE SCROLLBAR */
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+
+    scrollbar-width: none;
+  }
 }
 
-/* CINEMATIC BACKGROUND */
-.cinematic-bg {
-  background:
-    radial-gradient(
-      circle at top left,
-      rgba(0, 210, 255, 0.12),
-      transparent 30%
-    ),
-    radial-gradient(
-      circle at bottom right,
-      rgba(0, 124, 240, 0.12),
-      transparent 30%
-    ),
-    #050816;
+/* PLAYER */
+.react-player video {
+  border-radius: 24px;
 }
 
 /* ANIMATIONS */
@@ -210,44 +201,7 @@ body {
   animation: float 4s ease-in-out infinite;
 }
 
-.pulse-glow {
-  animation: pulseGlow 2s infinite;
+.glow {
+  animation: glow 2s infinite;
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-
-    transform: translateY(10px);
-  }
-
-  to {
-    opacity: 1;
-
-    transform: translateY(0);
-  }
-}
-
-@keyframes float {
-  0%,
-  100% {
-    transform: translateY(0px);
-  }
-
-  50% {
-    transform: translateY(-8px);
-  }
-}
-
-@keyframes pulseGlow {
-  0%,
-  100% {
-    box-shadow:
-      0 0 20px rgba(0, 210, 255, 0.2);
-  }
-
-  50% {
-    box-shadow:
-      0 0 40px rgba(0, 210, 255, 0.45);
-  }
-}

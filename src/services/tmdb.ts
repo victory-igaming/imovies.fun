@@ -53,6 +53,7 @@ export async function getPopularMovies() {
 /* MOVIE DETAILS */
 export async function getMovieDetails(
   movieId: string
+  
 ) {
   try {
     const response = await fetch(
@@ -62,12 +63,27 @@ export async function getMovieDetails(
 
     const data = await response.json();
 
+    const trailer = data.videos?.results?.find(
+      (video: any) =>
+        video.site === "YouTube" &&
+        video.type === "Trailer"
+    );
+
     return {
       ...data,
+      trailer,
 
       /* DEMO STREAM */
-      videoUrl:
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+      // videoUrl:
+      //   "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+      
+      /* STREAM URL */
+      videoUrl: Number(movieId) > 0 ? `https://vidlink.pro/movie/${movieId}` : null,
+
+      /* TRAILER */
+      trailerUrl: trailer ? `https://www.youtube.com/watch?v=${trailer.key}` : null,
+      trailerKey:  trailer?.key || null,
+
     };
   } catch (error) {
     console.error(
