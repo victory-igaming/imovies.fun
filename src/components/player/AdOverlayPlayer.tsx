@@ -27,9 +27,9 @@ export default function AdOverlayPlayer({
       {/* AD VIDEO */}
       <ReactPlayer
         url={ad.videoUrl}
-        playing
+        playing={countdown > 0}
         controls={false}
-        muted={false}
+        muted={countdown <= 0}
         width="100%"
         height="100%"
         onEnded={onFinished}

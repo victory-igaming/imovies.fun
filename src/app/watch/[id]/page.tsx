@@ -21,7 +21,7 @@ export default async function WatchPage({
   params,
 }: Props) {
   const movie = await getMovieDetails((await params).id);
-  console.log(movie);
+  //console.log(movie);
   const recommendedMovies =
     await getTrendingMovies();
 

@@ -30,12 +30,7 @@ const navItems = [
     name: "Movies",
     href: "/movies",
     icon: Film,
-  },
-  {
-    name: "Search",
-    href: "/search",
-    icon: Search,
-  },
+  }, 
   {
     name: "Favorites",
     href: "/favorites",
@@ -122,7 +117,9 @@ export default function Sidebar() {
             Watch movies in 4K Ultra HD.
           </p>
 
-          <button className="w-full rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 py-3 font-bold text-black hover:scale-105 transition">
+          <button className="w-full rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 py-3 font-bold text-black hover:scale-105 transition"
+          suppressHydrationWarning={true}
+          >
             Upgrade
           </button>
         </div>

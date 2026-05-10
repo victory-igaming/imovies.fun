@@ -11,12 +11,10 @@ import MovieCard from "@/components/movie/MovieCard";
 
 import { useFavoritesStore } from "@/store/favorites.store";
 
-const API_KEY =
-  process.env.NEXT_PUBLIC_TMDB_API_KEY;
+const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 
 export default function FavoritesPage() {
-  const { favorites } =
-    useFavoritesStore();
+  const { favorites,toggleFavorite } = useFavoritesStore();
 
   const [movies, setMovies] =
     useState<any[]>([]);
@@ -29,9 +27,9 @@ export default function FavoritesPage() {
       try {
         const results =
           await Promise.all(
-            favorites.map(async (id) => {
+            favorites.map(async (movie) => {
               const res = await fetch(
-                `https://api.themoviedb.org/3/movie/${id}?api_key=${API_KEY}`
+                `https://api.themoviedb.org/3/movie/${movie.id}?api_key=${API_KEY}`
               );
 
               return res.json();
@@ -99,7 +97,7 @@ export default function FavoritesPage() {
         )}
 
       {/* GRID */}
-      {movies.length > 0 && (
+      {favorites.length > 0 && (
         <div
           className="
             grid
@@ -110,7 +108,7 @@ export default function FavoritesPage() {
             gap-5
           "
         >
-          {movies.map((movie) => (
+          {favorites.map((movie) => (
             <MovieCard
               key={movie.id}
               movie={movie}

@@ -13,17 +13,11 @@ interface Props {
   priority?: boolean;
 }
 
-export default function MovieCard({
-  movie,
-   priority = false,
-}: Props) {
-  const {
-    toggleFavorite,
-    isFavorite,
-  } = useFavoritesStore();
+export default function MovieCard({ movie, priority = false }: Props) {
 
-  const favorite =
-    isFavorite(movie.id);
+  const { toggleFavorite, isFavorite } = useFavoritesStore();
+
+  const favorite = isFavorite(movie.id);
 
   return (
     <div
@@ -43,9 +37,7 @@ export default function MovieCard({
     >
       {/* FAVORITE BUTTON */}
       <button
-        onClick={() =>
-          toggleFavorite(movie.id)
-        }
+        onClick={() => toggleFavorite(movie)}
         className="
           absolute
           right-3
@@ -61,14 +53,12 @@ export default function MovieCard({
           backdrop-blur-xl
         "
         title="Favorite"
+        suppressHydrationWarning={true}
+        
       >
         <Heart
           size={20}
-          className={
-            favorite
-              ? "fill-red-500 text-red-500"
-              : "text-white"
-          }
+          className={favorite ? "fill-red-500 text-red-500" : "text-white"}
         />
       </button>
 
@@ -82,22 +72,18 @@ export default function MovieCard({
             }
             alt={movie?.title || "Movie Backdrop"}
             fill
-            priority={priority} 
-            loading={ priority ? "eager" : "lazy" }
+            priority={priority}
+            loading={priority ? "eager" : "lazy"}
             sizes=" (max-width: 640px) 50vw, (max-width: 1024px) 33vw, (max-width: 1280px) 25vw, 16vw "
             className="object-cover"
           />
         </div>
 
         <div className="p-4">
-          <h3 className="line-clamp-1 font-bold">
-            {movie.title}
-          </h3>
+          <h3 className="line-clamp-1 font-bold">{movie.title}</h3>
 
           <p className="mt-2 text-sm text-gray-400">
-            {movie.release_date?.split(
-              "-"
-            )[0]}
+            {movie.release_date?.split("-")[0]}
           </p>
         </div>
       </Link>

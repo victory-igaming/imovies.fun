@@ -27,21 +27,18 @@ export default function useAdInjection({
   onPauseMovie,
   onResumeMovie,
 }: Props) {
-  const [showAd, setShowAd] =
-    useState(false);
+  const [showAd, setShowAd] =  useState(false);
 
-  const [currentAd, setCurrentAd] =
-    useState<any>(null);
+  const [currentAd, setCurrentAd] = useState<any>(null);
 
-  const [adCountdown, setAdCountdown] =
-    useState(0);
+  const [adCountdown, setAdCountdown] = useState(0);
 
-  const playedAdsRef = useRef<
-    number[]
-  >([]);
+  const playedAdsRef = useRef< number[]>([]);
 
   /* TEST MODE */ 
   const TEST_AD_MODE = true;
+  const showDebug = true;
+  const AD_DURATION = 10; // 10 min
 
   /* AD SCHEDULE */
   
@@ -73,29 +70,33 @@ const adSchedule = useMemo(() => {
 
   let adCount = 1;
 
-  if (duration >= 3600) {
-    adCount = 2;
+  if(AD_DURATION > 0) {
+      adCount = Math.floor(duration / (AD_DURATION * 60));
+  }else{
+
+      if (duration >= 3600) {
+        adCount = 2;
+      }
+
+      if (duration >= 7200) {
+        adCount = 4;
+      }
+
+      if (duration >= 10800) {
+        adCount = 6;
+      }
   }
 
-  if (duration >= 7200) {
-    adCount = 4;
-  }
+  //console.log(`Calculated movie : ${duration} ad count: ${adCount}`);
 
-  if (duration >= 10800) {
-    adCount = 6;
-  }
-
-  const spacing =
-    duration / (adCount + 1);
+  const spacing =  duration / (adCount + 1);
 
   for (
     let i = 1;
     i <= adCount;
     i++
   ) {
-    schedule.push(
-      Math.floor(spacing * i)
-    );
+    schedule.push( Math.floor(spacing * i) );
   }
 
   return schedule;
@@ -124,10 +125,7 @@ const adSchedule = useMemo(() => {
 
         const randomAd =
           ads[
-            Math.floor(
-              Math.random() *
-                ads.length
-            )
+            Math.floor(Math.random() * ads.length)
           ];
 
         startAd(randomAd);
@@ -157,7 +155,8 @@ const adSchedule = useMemo(() => {
 
         setShowAd(false);
 
-        onResumeMovie();
+       /* DELAY RESUME */ 
+       setTimeout(() => { onResumeMovie(); }, 500);
       }
     }, 1000);
   };
@@ -166,7 +165,8 @@ const adSchedule = useMemo(() => {
   const onAdFinished = () => {
     setShowAd(false);
 
-    onResumeMovie();
+     /* DELAY RESUME */ 
+       setTimeout(() => { onResumeMovie(); }, 500);
   };
 const nextAdTime = adSchedule.find( (time) => time > currentTime ) || null;
   return {
@@ -178,6 +178,6 @@ const nextAdTime = adSchedule.find( (time) => time > currentTime ) || null;
     /* DEBUG */ 
     adSchedule, 
     nextAdTime,
-
+    showDebug,
   };
 }

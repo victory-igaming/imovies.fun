@@ -5,12 +5,12 @@ import MovieCard from "@/components/movie/MovieCard";
 import HeroBanner from "@/components/movie/HeroBanner";
 
 import {
-  getTrendingMovies,
+  getPopularMovies,
 } from "@/services/tmdb";
 
-export default async function TrendingPage() {
+export default async function PopularMovies() {
   const movies =
-    await getTrendingMovies();
+    await getPopularMovies();
 
   /* EMPTY */
   if (!movies?.length) {
@@ -35,7 +35,7 @@ export default async function TrendingPage() {
             "
           >
             <h2 className="text-4xl font-black">
-              No Trending Movies
+              No Popular Movies
             </h2>
 
             <p className="mt-4 text-gray-400">
@@ -48,8 +48,8 @@ export default async function TrendingPage() {
   }
 
   return (
-    <AppShell>    
-       
+    <AppShell>
+     
 
       {/* HEADER */}
       <div
@@ -69,36 +69,15 @@ export default async function TrendingPage() {
               md:text-5xl
             "
           >
-            Trending Now
+            Popular Movies
           </h1>
 
           <p className="mt-3 text-gray-400">
-            Most watched movies this week
+            Discover popular movies this week
           </p>
         </div>
 
-        {/* LIVE BADGE */}
-        <div
-          className="
-            hidden
-            items-center
-            gap-2
-            rounded-full
-            border
-            border-red-500/20
-            bg-red-500/10
-            px-5
-            py-3
-            text-sm
-            font-semibold
-            text-red-300
-            md:flex
-          "
-        >
-          <span className="h-2 w-2 rounded-full bg-red-400 animate-pulse" />
-
-          LIVE TRENDING
-        </div>
+       
       </div>
 
       {/* GRID */}

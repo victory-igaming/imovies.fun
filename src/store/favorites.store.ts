@@ -3,6 +3,10 @@ import { create } from "zustand";
 interface FavoritesState {
   favorites: any[];
 
+  toggleFavorite: (
+    movie: any
+  ) => void;
+
   addFavorite: (
     movie: any
   ) => void;
@@ -20,6 +24,21 @@ export const useFavoritesStore =
   create<FavoritesState>(
     (set, get) => ({
       favorites: [],
+
+      toggleFavorite: (movie: any) => {
+        const { favorites } = get();
+        const isFav = favorites.some((fav) => fav.id === movie.id);
+
+        if (isFav) {
+          set({
+            favorites: favorites.filter((fav) => fav.id !== movie.id),
+          });
+        } else {
+          set({
+            favorites: [...favorites, movie],
+          });
+        }
+      },
 
       addFavorite: (
         movie

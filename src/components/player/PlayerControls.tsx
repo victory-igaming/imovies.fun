@@ -1,11 +1,13 @@
 "use client";
 
-import {
-  Settings,
+import { 
   Play,
   Pause,
   Maximize,
+  Minimize,
   Volume2,
+  VolumeX,
+  Settings, 
 } from "lucide-react";
 
 interface Props {
@@ -15,15 +17,25 @@ interface Props {
 
   onOpenSources: () => void;
 
-  playing?: boolean;
+  isMuted?: boolean;
+  onToggleMute?: () => void;
 
+  isZoomed?: boolean;
+  onToggleZoom?: () => void;
+
+  playing?: boolean;
   onTogglePlay?: () => void;
 }
 
 export default function PlayerControls({
   movie,
   sourceName,
-  onOpenSources,
+  onOpenSources,  
+  isMuted,
+  onToggleMute,
+  isZoomed,
+  onToggleZoom,
+
   playing = true,
   onTogglePlay,
 }: Props) {
@@ -49,44 +61,7 @@ export default function PlayerControls({
       >
         {/* TITLE */}
         <div>
-          <h2
-            className="
-              text-2xl
-              font-black
-              md:text-4xl
-            "
-          >
-            {movie.title}
-          </h2>
-
-          <div
-            className="
-              mt-2
-              flex
-              items-center
-              gap-3
-              text-sm
-              text-gray-400
-            "
-          >
-            <span>
-              {movie.release_date?.split(
-                "-"
-              )[0]}
-            </span>
-
-            <span>•</span>
-
-            <span>
-              {movie.runtime}m
-            </span>
-
-            <span>•</span>
-
-            <span>
-              {sourceName}
-            </span>
-          </div>
+                  
         </div>
 
         {/* SOURCE BUTTON */}
@@ -146,6 +121,7 @@ export default function PlayerControls({
               transition
               hover:scale-110
             "
+            title={playing ? "Pause" : "Play"}
           >
             {playing ? (
               <Pause size={24} />
@@ -169,6 +145,7 @@ export default function PlayerControls({
               hover:bg-white/10
             "
             title="Volume"
+            onClick={onToggleMute}
           >
             <Volume2 size={22} />
           </button>
@@ -191,6 +168,7 @@ export default function PlayerControls({
               hover:bg-white/10
             "
             title="Fullscreen"
+            onClick={onToggleZoom}
           >
             <Maximize size={22} />
           </button>

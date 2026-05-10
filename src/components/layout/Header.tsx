@@ -218,6 +218,7 @@ useEffect(() => {
               text-white
             "
           title="Search"
+          suppressHydrationWarning={true}
           >
             <Search size={20} />
           </button>
@@ -245,6 +246,7 @@ useEffect(() => {
               hover:shadow-[0_0_25px_rgba(0,210,255,0.15)]
             "
           title="Notifications"
+          suppressHydrationWarning={true}
           >
             <Bell size={20} />
 
@@ -281,9 +283,10 @@ useEffect(() => {
               hover:bg-white/10
             "
           title="Profile"
+          suppressHydrationWarning={true}
           >
-            {/* AVATAR */}
-            <div
+           {/* AVATAR */}
+              <div
               className="
                 flex
                 items-center
@@ -299,18 +302,19 @@ useEffect(() => {
               "
             >
               I
-            </div>
-
-            {/* USER INFO */}
+            </div> 
+  
+           {/* USER INFO */}
             <div className="hidden md:block text-left">
               <p className="text-sm font-semibold text-white">
                 iMovies User
               </p>
 
-              <p className="text-xs text-gray-400">
+              {/* <p className="text-xs text-gray-400">
                 Premium Member
-              </p>
+              </p> */}
             </div>
+         
           </button>
         </div>
       </div>

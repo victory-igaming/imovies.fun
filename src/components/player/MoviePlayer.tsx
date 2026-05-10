@@ -1,11 +1,6 @@
-
 "use client";
 
-import {
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import useAdInjection from "@/hooks/useAdInjection";
 
@@ -23,41 +18,60 @@ interface Props {
   movie: any;
 }
 
-export default function MoviePlayer({
-  movie,
-}: Props) {
-  const [loading, setLoading] =
-    useState(true);
+export default function MoviePlayer({ movie }: Props) {
+  const [loading, setLoading] = useState(true);
+  const [playing, setPlaying] = useState(true);
+  const [watchTime, setWatchTime] = useState(0);
 
-  const [playing, setPlaying] =
-    useState(true);
+  const [isMuted, setIsMuted] = useState(false); 
+  const [isZoomed, setIsZoomed] = useState(false); 
+  const [selectedSource, setSelectedSource] = useState(0);
 
-  const [watchTime, setWatchTime] =
-    useState(0);
-
-  const [selectedSource, setSelectedSource] =
-    useState(0);
-
-  const [showSources, setShowSources] =
-    useState(false);
-
+  const [showSources, setShowSources] = useState(false);
+  const [isIframeActive, setIsIframeActive] = useState(true);
+  const [startAt, setStartAt] = useState(0);
   const players = useMemo(
     () => [
+     
+    {
+      title: "VidSrc 4",
+      source: `https://vidsrc.cc/v2/embed/movie/${movie.id}?autoPlay=1&muted=${isMuted ? 1 : 0}&startAt=${startAt}`,
+    
+    },
+      {
+        title: "VidSrc 5",
+        source: `https://vidsrc.cc/v3/embed/movie/${movie.id}?autoPlay=1&muted=${isMuted ? 1 : 0}&startAt=${startAt}`,
+      },
+
+       {
+        title: "MoviesAPI",
+        source: `https://moviesapi.club/movie/${movie.id}?autoplay=1&muted=${isMuted ? 1 : 0}&startAt=${startAt}`,
+      },
+
       {
         title: "VidLink",
-        source: `https://vidlink.pro/movie/${movie.id}`,
+        source: `https://vidlink.pro/movie/${movie.id}?autoplay=1&muted=${isMuted ? 1 : 0}&player=jw&primaryColor=006fee&secondaryColor=a2a2a2&iconColor=eefdec&autoplay=false&startAt=${startAt}`,
       },
 
       {
-        title: "Embed.su",
-        source: `https://embed.su/embed/movie/${movie.id}`,
+        title: "VidLink 2",
+        source: `https://vidlink.pro/movie/${movie.id}?autoplay=1&muted=${isMuted ? 1 : 0}&primaryColor=006fee&autoplay=false&startAt=${startAt}`,
+      },
+
+      {
+        title: "VidKing",
+        source: `https://www.vidking.net/embed/movie/${movie.id}?autoplay=1&muted=${isMuted ? 1 : 0}&color=006fee&startAt=${startAt}`,
+      },
+
+      {
+        title: "NontonGo",
+        source: `https://www.nontongo.win/embed/movie/${movie.id}?autoplay=1&muted=${isMuted ? 1 : 0}&startAt=${startAt}`,
       },
     ],
-    [movie.id]
+    [movie.id, isMuted, isZoomed,startAt],
   );
 
-  const PLAYER =
-    players[selectedSource];
+  const PLAYER = players[selectedSource];
 
   /* ADS */
   const {
@@ -67,32 +81,27 @@ export default function MoviePlayer({
     onAdFinished,
     adSchedule,
     nextAdTime,
+    showDebug,
   } = useAdInjection({
     currentTime: watchTime,
-
-    duration:
-      movie.runtime * 60,
-
-    onPauseMovie: () =>
-      setPlaying(false),
-
-    onResumeMovie: () =>
-      setPlaying(true),
+    duration: movie.runtime * 60,
+    onPauseMovie: () => setPlaying(false),
+    onResumeMovie: () => setPlaying(true),
   });
 
   /* WATCH TIMER */
   useEffect(() => {
-    if (showAd || loading) return;
+    if (showAd || loading || !playing || !isIframeActive) {
+      return;
+    }
 
     const interval = setInterval(() => {
-      setWatchTime(
-        (prev) => prev + 1
-      );
+      setWatchTime((prev) => prev + 1);
+      setStartAt(watchTime);
     }, 1000);
 
-    return () =>
-      clearInterval(interval);
-  }, [showAd, loading]);
+    return () => clearInterval(interval);
+  }, [showAd, loading, playing, isIframeActive]);
 
   return (
     <div
@@ -110,14 +119,20 @@ export default function MoviePlayer({
         loading={loading}
         setLoading={setLoading}
         setPlaying={setPlaying}
+        setIsIframeActive={setIsIframeActive}
+        isZoomed={isZoomed}
       />
 
       <PlayerControls
         movie={movie}
         sourceName={PLAYER.title}
-        onOpenSources={() =>
-          setShowSources(true)
-        }
+        onOpenSources={() => setShowSources(true)}
+        isMuted={isMuted}
+        onToggleMute={() => setIsMuted(!isMuted)}
+        isZoomed={isZoomed}
+        onToggleZoom={() => setIsZoomed(!isZoomed)}
+        playing={playing}
+        onTogglePlay={() => setPlaying(!playing)}
       />
 
       {showAd && currentAd && (
@@ -128,6 +143,7 @@ export default function MoviePlayer({
         />
       )}
 
+      {showDebug && (
       <DebugPanel
         watchTime={watchTime}
         runtime={movie.runtime}
@@ -135,14 +151,15 @@ export default function MoviePlayer({
         adSchedule={adSchedule}
         currentAd={currentAd}
         showAd={showAd}
-      />
+        playing={playing}
+        loading={loading}
+        showDebug={showDebug}
+      />  )}
 
       <SourceSelector
         open={showSources}
         players={players}
-        selectedSource={
-          selectedSource
-        }
+        selectedSource={selectedSource}
         onSelect={(index) => {
           setSelectedSource(index);
 

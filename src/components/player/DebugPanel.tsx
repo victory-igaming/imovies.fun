@@ -12,6 +12,12 @@ interface Props {
   currentAd: any;
 
   showAd: boolean;
+
+  playing: boolean;
+
+  loading: boolean;
+
+  showDebug: boolean;
 }
 
 export default function DebugPanel({
@@ -21,6 +27,9 @@ export default function DebugPanel({
   adSchedule,
   currentAd,
   showAd,
+  playing,
+  loading,
+  showDebug,
 }: Props) {
   /* DISABLE IN PRODUCTION */
   const SHOW_DEBUG = true;
@@ -73,16 +82,22 @@ export default function DebugPanel({
             text-xs
             font-bold
 
-            ${
-              showAd
-                ? "bg-red-500/20 text-red-300"
-                : "bg-green-500/20 text-green-300"
+            ${showAd 
+              ? "bg-red-500/20 text-red-300" 
+              : loading 
+              ? "bg-yellow-500/20 text-yellow-300" 
+              : !playing 
+              ? "bg-orange-500/20 text-orange-300" 
+              : "bg-green-500/20 text-green-300"
             }
           `}
         >
-          {showAd
-            ? "AD PLAYING"
-            : "MOVIE PLAYING"}
+          {showAd 
+          ? "AD PLAYING" 
+          : loading ? "PLAYER LOADING" 
+          : !playing ? "MOVIE PAUSED" 
+          : "MOVIE PLAYING"
+          }
         </div>
       </div>
 
@@ -96,16 +111,9 @@ export default function DebugPanel({
             justify-between
           "
         >
-          <span className="text-gray-400">
-            Watch Time
-          </span>
+          <span className="text-gray-400">Watch Time</span>
 
-          <span className="font-bold">
-            {Math.floor(
-              watchTime
-            )}
-            s
-          </span>
+          <span className="font-bold">{Math.floor(watchTime)}s</span>
         </div>
 
         {/* RUNTIME */}
@@ -116,13 +124,9 @@ export default function DebugPanel({
             justify-between
           "
         >
-          <span className="text-gray-400">
-            Runtime
-          </span>
+          <span className="text-gray-400">Runtime</span>
 
-          <span className="font-bold">
-            {runtime}m
-          </span>
+          <span className="font-bold">{runtime}m</span>
         </div>
 
         {/* NEXT AD */}
@@ -133,19 +137,11 @@ export default function DebugPanel({
             justify-between
           "
         >
-          <span className="text-gray-400">
-            Next Ad
-          </span>
+          <span className="text-gray-400">Next Ad</span>
 
           <span className="font-bold text-cyan-400">
             {nextAdTime
-              ? `${Math.max(
-                  0,
-                  Math.floor(
-                    nextAdTime -
-                      watchTime
-                  )
-                )}s`
+              ? `${Math.max(0, Math.floor(nextAdTime - watchTime))}s`
               : "Completed"}
           </span>
         </div>
@@ -158,14 +154,9 @@ export default function DebugPanel({
             justify-between
           "
         >
-          <span className="text-gray-400">
-            Current Ad
-          </span>
+          <span className="text-gray-400">Current Ad</span>
 
-          <span className="font-bold">
-            {currentAd?.title ||
-              "None"}
-          </span>
+          <span className="font-bold">{currentAd?.title || "None"}</span>
         </div>
       </div>
 
@@ -183,11 +174,10 @@ export default function DebugPanel({
         </p>
 
         <div className="flex flex-wrap gap-2">
-          {adSchedule.map(
-            (time) => (
-              <span
-                key={time}
-                className="
+          {adSchedule.map((time) => (
+            <span
+              key={time}
+              className="
                   rounded-full
                   border
                   border-cyan-400/20
@@ -198,14 +188,10 @@ export default function DebugPanel({
                   font-semibold
                   text-cyan-300
                 "
-              >
-                {Math.floor(
-                  time / 60
-                )}
-                m
-              </span>
-            )
-          )}
+            >
+              {Math.floor(time / 60)}m
+            </span>
+          ))}
         </div>
       </div>
 
@@ -222,9 +208,7 @@ export default function DebugPanel({
           text-gray-400
         "
       >
-        Debug mode enabled for ad
-        testing and playback
-        simulation.
+        Debug mode enabled for ad testing and playback simulation.
       </div>
     </div>
   );
