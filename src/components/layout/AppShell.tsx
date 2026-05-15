@@ -1,7 +1,7 @@
  
 import Sidebar from "./Sidebar";
 
-import MobileNav from "./MobileNav";
+import MobileNav from "./Mobilenav";
 
 import Header from "./Header";
 

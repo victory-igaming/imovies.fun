@@ -35,17 +35,17 @@ export default function MoviePlayer({ movie }: Props) {
      
     {
       title: "VidSrc 4",
-      source: `https://vidsrc.cc/v2/embed/movie/${movie.id}?autoPlay=1&muted=${isMuted ? 1 : 0}&startAt=${startAt}`,
+      source: `https://vidsrc.cc/v2/embed/movie/${movie.id}?autoPlay=true&muted=${isMuted ? 1 : 0}`,
     
     },
       {
         title: "VidSrc 5",
-        source: `https://vidsrc.cc/v3/embed/movie/${movie.id}?autoPlay=1&muted=${isMuted ? 1 : 0}&startAt=${startAt}`,
+        source: `https://vidsrc.cc/v3/embed/movie/${movie.id}?autoPlay=true&muted=${isMuted ? 1 : 0}`,
       },
 
        {
         title: "MoviesAPI",
-        source: `https://moviesapi.club/movie/${movie.id}?autoplay=1&muted=${isMuted ? 1 : 0}&startAt=${startAt}`,
+        source: `https://moviesapi.club/movie/${movie.id}?autoplay=1&muted=${isMuted ? 1 : 0}`,
       },
 
       {
@@ -85,8 +85,10 @@ export default function MoviePlayer({ movie }: Props) {
   } = useAdInjection({
     currentTime: watchTime,
     duration: movie.runtime * 60,
+    movieData: movie, 
     onPauseMovie: () => setPlaying(false),
     onResumeMovie: () => setPlaying(true),
+  
   });
 
   /* WATCH TIMER */
@@ -123,7 +125,7 @@ export default function MoviePlayer({ movie }: Props) {
         isZoomed={isZoomed}
       />
 
-      <PlayerControls
+      {/* <PlayerControls
         movie={movie}
         sourceName={PLAYER.title}
         onOpenSources={() => setShowSources(true)}
@@ -133,7 +135,7 @@ export default function MoviePlayer({ movie }: Props) {
         onToggleZoom={() => setIsZoomed(!isZoomed)}
         playing={playing}
         onTogglePlay={() => setPlaying(!playing)}
-      />
+      /> */}
 
       {showAd && currentAd && (
         <AdOverlayPlayer

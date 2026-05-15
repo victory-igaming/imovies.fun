@@ -40,7 +40,7 @@ const navItems = [
   },
 ];
 
-export default function MobileNav() {
+export default function Mobilenav() {
   const pathname = usePathname();
 
   return (

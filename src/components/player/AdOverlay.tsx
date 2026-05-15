@@ -18,10 +18,7 @@ export default function AdOverlay({
   return (
     <div
       className="
-        absolute
-        inset-0
-        z-50
-        bg-black
+        absolute inset-0 z-[9999] bg-black w-full h-full        
       "
     >
       {/* VIDEO */}

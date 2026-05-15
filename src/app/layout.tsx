@@ -4,7 +4,7 @@ import { Inter } from "next/font/google";
 
 import "@/app/globals.css";
 
-import MobileNav from "@/components/layout/MobileNav";
+import MobileNav from "@/components/layout/Mobilenav";
 
 import Providers from "./providers";
 
