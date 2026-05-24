@@ -49,7 +49,7 @@ export default function Sidebar() {
   const { sidebarOpen,toggleSidebar,} = useUIStore();
 
   return (
-    <aside className="fixed left-0 top-0 z-50 h-screen w-20 md:w-64 bg-[#081018]/95 backdrop-blur-xl border-r border-white/10 p-4 flex flex-col">
+    <aside className="hidden md:flex fixed left-0 top-0 z-50 h-screen w-64 bg-[#081018]/95 backdrop-blur-xl border-r border-white/10 p-4 flex-col">
       {/* LOGO */}
       <Link
         href="/"

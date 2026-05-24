@@ -6,6 +6,8 @@ import useAdInjection from "@/hooks/useAdInjection";
 
 import VideoPlayer from "./VideoPlayer";
 
+import StreamMoviePlayer from "../StreamMoviePlayer";
+
 import PlayerControls from "./PlayerControls";
 
 import AdOverlayPlayer from "./AdOverlayPlayer";
@@ -30,6 +32,9 @@ export default function MoviePlayer({ movie }: Props) {
   const [showSources, setShowSources] = useState(false);
   const [isIframeActive, setIsIframeActive] = useState(true);
   const [startAt, setStartAt] = useState(0);
+  const [adReady, setAdReady] = useState(false);
+
+
   const players = useMemo(
     () => [
      
@@ -78,7 +83,7 @@ export default function MoviePlayer({ movie }: Props) {
     showAd,
     currentAd,
     adCountdown,
-    onAdFinished,
+    onAdFinished,   
     adSchedule,
     nextAdTime,
     showDebug,
@@ -105,6 +110,11 @@ export default function MoviePlayer({ movie }: Props) {
     return () => clearInterval(interval);
   }, [showAd, loading, playing, isIframeActive]);
 
+
+  const onAdReady = () => {
+  setAdReady(true);
+};
+
   return (
     <div
       className="
@@ -116,14 +126,17 @@ export default function MoviePlayer({ movie }: Props) {
         bg-black
       "
     >
-      <VideoPlayer
+      {/* <VideoPlayer
         source={PLAYER.source}
         loading={loading}
         setLoading={setLoading}
         setPlaying={setPlaying}
         setIsIframeActive={setIsIframeActive}
         isZoomed={isZoomed}
-      />
+      /> */}
+
+
+      <StreamMoviePlayer movieId={movie.id} title={movie.title} />
 
       {/* <PlayerControls
         movie={movie}
@@ -142,6 +155,7 @@ export default function MoviePlayer({ movie }: Props) {
           ad={currentAd}
           countdown={adCountdown}
           onFinished={onAdFinished}
+          onAdReady={onAdReady}
         />
       )}
 

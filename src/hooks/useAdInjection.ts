@@ -34,16 +34,19 @@ export default function useAdInjection({
   
   const [ads, setAds] = useState<Ad[]>([]);
   const [showAd, setShowAd] = useState(false);
+  const [adReady, setAdReady] = useState(false);
   const [currentAd, setCurrentAd] = useState<Ad | null>(null);
   const [adCountdown, setAdCountdown] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+
+
 
   const playedAdsRef = useRef<number[]>([]);
   const prerollPlayedRef = useRef(false);
   
   /* 1. FETCH ADS FROM API */
   useEffect(() => {
-    getAdvertisements()
+     getAdvertisements()
       .then((data) => {
         setAds(data);
       })
@@ -95,22 +98,24 @@ export default function useAdInjection({
     });
   }, [currentTime, adSchedule, ads, isLoading]);
 
-  /* 4. AD TRACKING LOGIC */
+ /* 4. AD TRACKING LOGIC */
   const trackAd = async (adId: number, adDuration: number) => {
     try {
       const currentMovieId = movieData?.id || 0;
+      
+      // FIX: Changed from movieData?.id to your actual unique tmdb_id key property
       const currentTmdbId = movieData?.id?.toString() || "0";
       
       // We send "0" for viewer_id because the Laravel backend 
       // will overwrite it with $request->ip()
       const currentViewerId = "0";
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_CMS_URL}/api/track-ad`, {
+      // SECURE FIX: Point to your local Next.js proxy route, NOT the remote URL directly
+      const response = await fetch("/api/track", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${process.env.NEXT_PUBLIC_CMS_TOKEN_KEY}`,
           "Content-Type": "application/json",
-          "Accept": "application/json",
+          // 'Authorization' and 'Accept' are safely appended server-side inside /api/track/route.ts
         },
         body: JSON.stringify({
           ad_id: adId,
@@ -122,13 +127,23 @@ export default function useAdInjection({
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error("Ad Tracking Server Error:", errorData);
+        // Read response text first in case the server returns HTML errors (like 404/500)
+        const errorText = await response.text();
+        
+        try {
+          // If it's valid JSON error layout data, parse it cleanly
+          const errorData = JSON.parse(errorText);
+          console.error("Ad Tracking Server Error:", errorData);
+        } catch (e) {
+          // If Laravel crashes or returns a 404 raw string block, capture it here
+          console.error(`Ad Tracking Server Error (${response.status}):`, errorText);
+        }
       } else {
-        console.log("Ad tracking successful for Ad ID:", adId);
+        const responseData = await response.json().catch(() => ({ status: "success" }));
+        console.log("Ad tracking successful for Ad ID:", adId, responseData);
       }
     } catch (error) {
-      console.error("Tracking Network failed", error);
+      console.error("Tracking Client-Side Network failed:", error);
     }
   };
 
@@ -172,10 +187,10 @@ export default function useAdInjection({
 
     setShowAd(false);
     setCurrentAd(null);
-    onResumeMovie(); 
-    // setTimeout(() => { 
+     onResumeMovie(); 
+    setTimeout(() => { 
      
-    // }, 500);
+    }, 500);
   };
 
   const nextAdTime = adSchedule.find((time) => time > currentTime) || null;

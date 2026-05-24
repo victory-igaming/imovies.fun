@@ -1,10 +1,8 @@
 // ./service/cmsdb.ts
 
-//const CMS_URL = process.env.NEXT_PUBLIC_CMS_URL || "https://cms.imovies.fun";
-//const CMS_TOKEN = process.env.NEXT_PUBLIC_CMS_TOKEN_KEY || "1|7mAWNIGCNqsLBT2uG7MEjVBpy0nc7lGleOZdfmp36a2b6a78";
-
 const CMS_URL = process.env.NEXT_PUBLIC_CMS_URL;
 const CMS_TOKEN = process.env.NEXT_PUBLIC_CMS_TOKEN_KEY;
+
 
 export async function getAdvertisements() {
   const baseUrl = process.env.NEXT_PUBLIC_CMS_URL?.replace(/\/$/, ""); 
@@ -31,4 +29,32 @@ export async function getAdvertisements() {
     console.error("CMS API Error:", error);
     throw error;
   }
+}
+
+
+export async function getAdvertisementsNew() {
+  const endpoint = "/api/advertisement";
+
+  console.log("DEBUG: Fetching ads from ->", endpoint);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: Failed to load advertisements.`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Advertisement API Error:", error);
+    return [];
+  }
+
+  
 }
