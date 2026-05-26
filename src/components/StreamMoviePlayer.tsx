@@ -1,228 +1,379 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Hls from "hls.js";
+import { Loader2, RotateCcw } from "lucide-react";
 
-interface MoviePlayerProps {
-  movieId: string;
+interface Props {
+  movieId: string | number;
   title?: string;
   poster?: string;
-  autoPlay?: boolean;
+  playing: boolean;
+  muted: boolean;
+  zoomed: boolean;
+  startAt?: number;
+  seekTo?: number | null;
+  onSeekComplete?: () => void;
+  onLoadingChange?: (loading: boolean) => void;
+  onTimeUpdate?: (seconds: number) => void;
+  onSourceReady?: (sourceName: string) => void;
+  onFallback?: () => void;
+  
 }
 
-type Status = "idle" | "loading" | "ready-hls" | "ready-embed" | "error";
+type Status = "loading" | "ready-hls" | "ready-embed" | "error";
 
-interface StreamData {
-  streamUrl?: string;
-  proxyHeaders?: Record<string, string>;
-  referer?: string;
-  source?: string;
-  embedUrl?: string;
-  error?: string;
+const inFlight = new Map<string, Promise<any>>();
+
+async function fetchStream(movieId: string | number) {
+  const key = String(movieId);
+
+  if (inFlight.has(key)) {
+    return inFlight.get(key)!;
+  }
+
+  const request = fetch(`/api/stream?id=${key}`)
+    .then((res) => res.json())
+    .finally(() => inFlight.delete(key));
+
+  inFlight.set(key, request);
+
+  return request;
 }
 
-export default function StreamMoviePlayer({ movieId, title, poster, autoPlay }: MoviePlayerProps) {
-  const videoRef  = useRef<HTMLVideoElement>(null);
-  const hlsRef    = useRef<Hls | null>(null);
-  const [status, setStatus]       = useState<Status>("idle");
-  const [error, setError]         = useState("");
-  const [source, setSource]       = useState("");
+export default function StreamMoviePlayer({
+  movieId,
+  title,
+  poster,
+  playing,
+  muted,
+  zoomed,
+  startAt = 0,
+  seekTo,
+  onSeekComplete,
+  onTimeUpdate,
+  onSourceReady,
+  onLoadingChange,
+  onFallback,
+}: Props) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const hlsRef = useRef<Hls | null>(null);
+  const mountedRef = useRef(false);
+
+  const [status, setStatus] = useState<Status>("loading");
   const [streamUrl, setStreamUrl] = useState("");
-  const [embedUrl, setEmbedUrl]   = useState("");
-  const [proxyHeaders, setProxyHeaders] = useState<Record<string, string>>({});
+  const [embedUrl, setEmbedUrl] = useState("");
+  const [embedList, setEmbedList] = useState<string[]>([]);
+  const [embedIndex, setEmbedIndex] = useState(0);
+  const [error, setError] = useState("");
+
+  const destroyHls = useCallback(() => {
+    if (!hlsRef.current) return;
+
+    hlsRef.current.stopLoad();
+    hlsRef.current.detachMedia();
+    hlsRef.current.destroy();
+    hlsRef.current = null;
+  }, []);
+
+  const switchToEmbed = useCallback(
+    (index = 0) => {
+      if (!mountedRef.current) return;
+
+      if (embedList[index]) {
+        setEmbedIndex(index);
+        setEmbedUrl(embedList[index]);
+        setStatus("ready-embed");
+        setError("");
+        onSourceReady?.(`Embed ${index + 1}`);
+        onLoadingChange?.(false);
+      } else {
+        setStatus("error");
+        setError("All sources failed.");
+        onLoadingChange?.(false);
+        onFallback?.();
+      }
+    },
+    [embedList, onFallback, onLoadingChange, onSourceReady]
+  );
 
   const loadStream = useCallback(async () => {
+    destroyHls();
+
     setStatus("loading");
     setError("");
-    setSource("");
+    setStreamUrl("");
+    setEmbedUrl("");
+    setEmbedList([]);
+    setEmbedIndex(0);
+
+    onLoadingChange?.(true);
 
     try {
-      const res  = await fetch(`/api/stream?id=${movieId}`);
-      const data = (await res.json()) as StreamData;
+      const data = await fetchStream(movieId);
 
-      if (data.embedUrl) setEmbedUrl(data.embedUrl);
+      if (!mountedRef.current) return;
+
+      const fallbacks: string[] =
+        data.embedFallbacks ?? (data.embedUrl ? [data.embedUrl] : []);
+
+      setEmbedList(fallbacks);
 
       if (data.streamUrl) {
-        // Pass captured browser headers to proxy so CDN accepts our server requests
-        const hdrs = data.proxyHeaders ?? {};
-        setProxyHeaders(hdrs);
-        const proxied = `/api/proxy?url=${encodeURIComponent(data.streamUrl)}&headers=${encodeURIComponent(JSON.stringify(hdrs))}`;
-        setStreamUrl(proxied);
-        setSource(data.source ?? "");
+        const headers = data.proxyHeaders ?? {};
+
+        const proxiedUrl = `/api/proxy?url=${encodeURIComponent(
+          data.streamUrl
+        )}&headers=${encodeURIComponent(JSON.stringify(headers))}`;
+
+        setStreamUrl(proxiedUrl);
         setStatus("ready-hls");
-      } else if (data.embedUrl) {
-        setSource("Embed");
+        onSourceReady?.(data.source || "HLS");
+      } else if (fallbacks.length > 0) {
+        setEmbedUrl(fallbacks[0]);
         setStatus("ready-embed");
+        onSourceReady?.("Embed 1");
       } else {
-        setError(data.error ?? "No stream available.");
         setStatus("error");
+        setError("No stream available.");
+        onFallback?.();
       }
-    } catch {
-      setError("Network error — could not reach the stream API.");
+    } catch (err: any) {
       setStatus("error");
+      setError(err?.message || "Failed to load stream.");
+      onFallback?.();
+    } finally {
+      onLoadingChange?.(false);
     }
+  }, [
+    movieId,
+    destroyHls,
+    onFallback,
+    onLoadingChange,
+    onSourceReady,
+  ]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    loadStream();
+
+    return () => {
+      mountedRef.current = false;
+      destroyHls();
+    };
   }, [movieId]);
 
   useEffect(() => {
-    if (autoPlay) loadStream();
-  }, [autoPlay, loadStream]);
+    if (status !== "ready-hls" || !streamUrl) return;
 
-  useEffect(() => {
-    if (status !== "ready-hls" || !streamUrl || !videoRef.current) return;
     const video = videoRef.current;
+    if (!video) return;
+
+    destroyHls();
 
     if (Hls.isSupported()) {
-      hlsRef.current?.destroy();
       const hls = new Hls({
-        maxBufferLength:        30,
-        maxMaxBufferLength:     120,
-        enableWorker:           true,
-        fragLoadingTimeOut:     30000,
+        enableWorker: true,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
         manifestLoadingTimeOut: 20000,
+        fragLoadingTimeOut: 30000,
       });
+
       hls.loadSource(streamUrl);
       hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => void video.play().catch(() => {}));
-      hls.on(Hls.Events.ERROR, (_, d) => {
-        if (d.fatal) { setError(`HLS error: ${d.details}`); setStatus("error"); }
+
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        onLoadingChange?.(false);
+
+        if (startAt > 0) {
+          video.currentTime = startAt;
+        }
+
+        if (playing) {
+          video.play().catch(() => {});
+        }
       });
+
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        if (!data.fatal) return;
+
+        console.warn("HLS fatal error:", data.details);
+
+        destroyHls();
+
+        if (embedList.length > 0) {
+          setEmbedUrl(embedList[0]);
+          setEmbedIndex(0);
+          setStatus("ready-embed");
+          onSourceReady?.("Embed 1");
+          onLoadingChange?.(false);
+        } else {
+          setStatus("error");
+          setError(`HLS error: ${data.details}`);
+          onLoadingChange?.(false);
+          onFallback?.();
+        }
+      });
+
       hlsRef.current = hls;
     } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = streamUrl;
-      void video.play().catch(() => {});
+
+      if (startAt > 0) {
+        video.currentTime = startAt;
+      }
+
+      if (playing) {
+        video.play().catch(() => {});
+      }
+    } else if (embedList.length > 0) {
+      setEmbedUrl(embedList[0]);
+      setEmbedIndex(0);
+      setStatus("ready-embed");
+      onSourceReady?.("Embed 1");
     } else {
-      setError("Your browser does not support HLS playback.");
       setStatus("error");
+      setError("HLS is not supported.");
+      onFallback?.();
     }
 
-    return () => { hlsRef.current?.destroy(); hlsRef.current = null; };
-  }, [status, streamUrl]);
+    return () => {
+      destroyHls();
+    };
+  }, [status, streamUrl, embedList]);
 
-  useEffect(() => () => { hlsRef.current?.destroy(); }, []);
+  useEffect(() => {
+    const video = videoRef.current;
+
+    if (!video || status !== "ready-hls") return;
+
+    video.muted = muted;
+
+    if (playing) {
+      video.play().catch(() => {});
+    } else {
+      video.pause();
+    }
+  }, [playing, muted, status]);
+
+  const handleNextEmbed = () => {
+    const next = embedIndex + 1;
+
+    if (embedList[next]) {
+      setEmbedIndex(next);
+      setEmbedUrl(embedList[next]);
+      onSourceReady?.(`Embed ${next + 1}`);
+    } else {
+      onFallback?.();
+    }
+  };
+
+  useEffect(() => {
+  const video = videoRef.current;
+
+  if (!video) return;
+
+  if (seekTo === null || seekTo === undefined) return;
+
+  video.currentTime = seekTo;
+  onSeekComplete?.();
+}, [seekTo, onSeekComplete]);
 
   return (
-    <div style={wrap}>
-      {title && (
-        <div style={header}>
-          <span style={titleStyle}>{title}</span>
-          {source && <span style={badge}>{source}</span>}
+    <div className="relative aspect-video overflow-hidden bg-black">
+      {status === "ready-hls" && (
+        <video
+          ref={videoRef}
+          poster={poster}
+          playsInline
+          muted={muted}
+          onTimeUpdate={(e) =>
+            onTimeUpdate?.(Math.floor(e.currentTarget.currentTime))
+          }
+          className={`
+            h-full
+            w-full
+            object-cover
+            transition-transform
+            duration-500
+            ${zoomed ? "scale-100" : "scale-100"}
+          `}
+        />
+      )}
+
+      {status === "ready-embed" && embedUrl && (
+        <iframe
+          key={embedUrl}
+          src={embedUrl}
+          allowFullScreen
+          allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+          referrerPolicy="no-referrer"
+          onLoad={() => onLoadingChange?.(false)}
+          className="absolute inset-0 h-full w-full border-0"
+        />
+      )}
+
+      {status === "loading" && (
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black">
+          <img
+            src="/logos/logo.png"
+            alt="Logo"
+            className="mb-6 w-28 animate-pulse"
+          />
+
+          <Loader2
+            size={58}
+            className="animate-spin text-cyan-400"
+          />
+
+          <p className="mt-5 text-sm text-gray-400">
+            Loading cinematic stream...
+          </p>
         </div>
       )}
 
-      <div style={videoBox}>
-        {status === "ready-hls" && (
-          <video ref={videoRef} controls poster={poster} style={videoStyle} playsInline />
-        )}
-
-        {status === "ready-embed" && embedUrl && (
-          // NO sandbox attribute — Videasy and other players detect & block it
-          <iframe
-            src={embedUrl}
-            style={iframeStyle}
-            allowFullScreen
-            allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
-            referrerPolicy="no-referrer-when-downgrade"
+      {status === "error" && (
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black text-center">
+          <img
+            src="/logos/logo.png"
+            alt="Logo"
+            className="mb-6 w-28 opacity-80"
           />
-        )}
 
-        {status !== "ready-hls" && status !== "ready-embed" && (
-          <div style={overlay}>
-            {status === "idle" && (
-              <button style={playBtn} onClick={loadStream}>
-                <svg width={28} height={28} viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M8 5v14l11-7z"/>
-                </svg>
-                Play
+          <p className="mb-5 max-w-md px-6 text-sm text-red-400">
+            {error}
+          </p>
+
+          <div className="flex gap-3">
+            <button
+              onClick={loadStream}
+              className="flex items-center gap-2 rounded-full bg-cyan-500 px-6 py-3 font-bold text-white transition hover:scale-105"
+            >
+              <RotateCcw size={18} />
+              Reload Stream
+            </button>
+
+            {embedList.length > 0 && (
+              <button
+                onClick={() => switchToEmbed(0)}
+                className="rounded-full border border-white/20 px-6 py-3 font-bold text-white transition hover:bg-white/10"
+              >
+                Use Backup
               </button>
             )}
-            {status === "loading" && (
-              <div style={spinnerWrap}>
-                <div style={spinnerEl} />
-                <p style={loadingText}>Finding stream…</p>
-              </div>
-            )}
-            {status === "error" && (
-              <div style={errorWrap}>
-                <p style={errorText}>{error}</p>
-                <button style={retryBtn} onClick={loadStream}>Try again</button>
-              </div>
-            )}
           </div>
-        )}
-      </div>
-
-      {(status === "ready-hls" || status === "ready-embed") && (
-        <div style={infoBar}>
-          <span style={infoLabel}>{status === "ready-hls" ? "HLS" : "Embed"}</span>
-          <span style={infoUrl}>
-            {(status === "ready-hls" ? streamUrl : embedUrl).slice(0, 90)}
-          </span>
         </div>
       )}
 
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      {status === "ready-embed" && embedList.length > 1 && (
+        <button
+          onClick={handleNextEmbed}
+          className="absolute right-4 top-4 z-20 rounded-full bg-black/70 px-4 py-2 text-sm font-bold text-white backdrop-blur-xl"
+        >
+          Next Source
+        </button>
+      )}
     </div>
   );
 }
-
-// ── Styles ────────────────────────────────────────────────────────────────────
-const wrap: React.CSSProperties = {
-  width: "100%", fontFamily: "'DM Sans', system-ui, sans-serif",
-  background: "#0a0a0a", borderRadius: 12, overflow: "hidden",
-  boxShadow: "0 24px 80px rgba(0,0,0,0.6)",
-};
-const header: React.CSSProperties = {
-  display: "flex", alignItems: "center", justifyContent: "space-between",
-  padding: "12px 16px", background: "#111", borderBottom: "1px solid #1f1f1f",
-};
-const titleStyle: React.CSSProperties = { color: "#f0f0f0", fontSize: 15, fontWeight: 600 };
-const badge: React.CSSProperties = {
-  background: "#1a1a2e", color: "#6c8bff", fontSize: 11, fontWeight: 600,
-  padding: "3px 10px", borderRadius: 20, textTransform: "uppercase",
-  letterSpacing: "0.04em", border: "1px solid #2a2a4e",
-};
-const videoBox: React.CSSProperties = {
-  position: "relative", width: "100%", aspectRatio: "16/9", background: "#000",
-};
-const videoStyle: React.CSSProperties = { width: "100%", height: "100%", display: "block" };
-const iframeStyle: React.CSSProperties = { width: "100%", height: "100%", border: "none", display: "block" };
-const overlay: React.CSSProperties = {
-  position: "absolute", inset: 0, display: "flex", alignItems: "center",
-  justifyContent: "center", background: "linear-gradient(135deg, #0d0d1a 0%, #000 100%)",
-};
-const playBtn: React.CSSProperties = {
-  display: "flex", alignItems: "center", gap: 10, background: "#fff", color: "#000",
-  border: "none", borderRadius: 50, padding: "14px 28px", fontSize: 16,
-  fontWeight: 700, cursor: "pointer",
-};
-const spinnerWrap: React.CSSProperties = {
-  display: "flex", flexDirection: "column", alignItems: "center", gap: 16,
-};
-const spinnerEl: React.CSSProperties = {
-  width: 40, height: 40,
-  border: "3px solid rgba(255,255,255,0.2)", borderTopColor: "#fff",
-  borderRadius: "50%", animation: "spin 0.8s linear infinite",
-};
-const loadingText: React.CSSProperties = { color: "rgba(255,255,255,0.5)", fontSize: 13, margin: 0 };
-const errorWrap: React.CSSProperties = {
-  display: "flex", flexDirection: "column", alignItems: "center",
-  gap: 16, padding: "0 32px", textAlign: "center",
-};
-const errorText: React.CSSProperties = { color: "#ff6b6b", fontSize: 14, lineHeight: 1.5, margin: 0 };
-const retryBtn: React.CSSProperties = {
-  background: "transparent", color: "#fff",
-  border: "1px solid rgba(255,255,255,0.3)", borderRadius: 8,
-  padding: "8px 20px", fontSize: 13, cursor: "pointer",
-};
-const infoBar: React.CSSProperties = {
-  display: "flex", alignItems: "center", gap: 8,
-  padding: "8px 16px", background: "#0d0d0d", borderTop: "1px solid #1a1a1a",
-};
-const infoLabel: React.CSSProperties = {
-  color: "#444", fontSize: 11, fontWeight: 600,
-  textTransform: "uppercase", letterSpacing: "0.06em", flexShrink: 0,
-};
-const infoUrl: React.CSSProperties = {
-  color: "#333", fontSize: 11, fontFamily: "monospace",
-  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-};

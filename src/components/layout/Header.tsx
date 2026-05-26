@@ -344,6 +344,7 @@ useEffect(() => {
             />
 
             <input
+              suppressHydrationWarning
               autoFocus
               type="text"
               placeholder="Search movies..."

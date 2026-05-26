@@ -54,8 +54,10 @@ export default function useAdInjection({
       .finally(() => setIsLoading(false));
   }, []);
 
-  const TEST_AD_MODE = false;
-  const showDebug = false;
+  //const TEST_AD_MODE = true;
+  //const showDebug = true;
+  const TEST_AD_MODE = process.env.NEXT_PUBLIC_TEST_AD_MODE === "true";
+  const showDebug = process.env.NEXT_PUBLIC_NODE_ENV === "development";
   const AD_INTERVAL_MINUTES = 10; 
 
   /* AD SCHEDULE */
@@ -193,6 +195,10 @@ export default function useAdInjection({
     }, 500);
   };
 
+  const onAdReady = () => {
+  setAdReady(true);
+};
+
   const nextAdTime = adSchedule.find((time) => time > currentTime) || null;
 
   return {
@@ -200,9 +206,10 @@ export default function useAdInjection({
     currentAd,
     adCountdown,
     onAdFinished,
-    adSchedule, 
+    onAdReady,
+    adSchedule,
     nextAdTime,
     showDebug,
-    isLoading
+    isLoading,
   };
 }

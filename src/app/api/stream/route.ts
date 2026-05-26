@@ -1,10 +1,4 @@
 // app/api/stream/route.ts
-// Tries Playwright first (real browser, captures exact headers).
-// Falls back to static scraper if Playwright unavailable.
-// Always returns embedUrl as last resort.
-//
-// GET /api/stream?id=3293
-// Returns: { streamUrl, proxyHeaders, source, embedUrl }
 
 import { NextRequest, NextResponse } from "next/server";
 
@@ -15,67 +9,89 @@ const MP4_FULL  = /https?:\/\/[^\s"'\\<>]+\.(mp4|mkv|webm)(?:[^\s"'\\<>]*)/gi;
 const SKIP_RE   = /google|facebook|doubleclick|gstatic|fonts\.|analytics|tracking|recaptcha/i;
 const IFRAME_RE = /<iframe[^>]+src=["']([^"']+)["']/gi;
 const SCRIPT_RE = /<script[^>]+src=["']([^"']+)["']/gi;
-const TIMEOUT   = 40_000;
+const PW_TIMEOUT   = 15_000;
+const HTTP_TIMEOUT =  7_000;
+const CACHE_TTL    = 10 * 60 * 1000;
 
-function buildSources(id: string) {
+// ── Strict response types — no ambiguous unions ───────────────────────────────
+
+interface StreamResult {
+  streamUrl: string;
+  proxyHeaders: Record<string, string>;
+  source: string;
+  embedUrl: string;
+  embedFallbacks: string[];
+}
+
+interface EmbedOnlyResult {
+  streamUrl: null;
+  proxyHeaders: null;
+  source: null;
+  embedUrl: string;
+  embedFallbacks: string[];
+}
+
+type ApiResult = StreamResult | EmbedOnlyResult;
+
+// ── Server-side dedup + cache ─────────────────────────────────────────────────
+const serverCache    = new Map<string, { data: ApiResult; expires: number }>();
+const serverInflight = new Map<string, Promise<ApiResult>>();
+
+// ── Sources ───────────────────────────────────────────────────────────────────
+
+function buildPlaywrightSources(id: string) {
   return [
+    { title: "VidKing",   url: `https://www.vidking.net/embed/movie/${id}?autoplay=1` },
     { title: "VidLink",   url: `https://vidlink.pro/movie/${id}?autoplay=1&player=jw&primaryColor=006fee` },
     { title: "VidLink 2", url: `https://vidlink.pro/movie/${id}?autoplay=1&primaryColor=006fee` },
-    { title: "Videasy",   url: `https://player.videasy.net/movie/${id}` },
-    { title: "VidKing",   url: `https://www.vidking.net/embed/movie/${id}?autoplay=1` },
     { title: "NontonGo",  url: `https://www.nontongo.win/embed/movie/${id}?autoplay=1` },
-    { title: "VidSrc v2", url: `https://vidsrc.cc/v2/embed/movie/${id}?autoPlay=true` },
-    { title: "VidSrc v3", url: `https://vidsrc.cc/v3/embed/movie/${id}?autoPlay=true` },
-    { title: "MoviesAPI", url: `https://moviesapi.club/movie/${id}?autoplay=1` },
+    { title: "Videasy",   url: `https://player.videasy.net/movie/${id}` },   
+    { title: "VidSrc v2", url: `https://vidsrc.win/watch${id}?autoPlay=true` },     
   ];
 }
 
-// ── Playwright path (captures real browser headers + cookies) ─────────────────
-async function tryPlaywright(sources: { title: string; url: string }[]): Promise<{
-  streamUrl: string; proxyHeaders: Record<string, string>; source: string;
-} | null> {
-  try {
-    const { chromium } = await import("playwright");
-    const browser = await chromium.launch({ headless: true });
-    try {
-      for (const src of sources) {
-        const ctx  = await browser.newContext({ userAgent: UA, viewport: { width: 1280, height: 720 } });
-        const page = await ctx.newPage();
-        let foundUrl = "";
-        let foundHeaders: Record<string, string> = {};
-
-        page.on("request", (req) => {
-          if (foundUrl) return;
-          const url = req.url();
-          if (SKIP_RE.test(url)) return;
-          if (M3U8_RE.test(url)) {
-            foundUrl     = url;
-            foundHeaders = req.headers();
-          }
-        });
-
-        try {
-          await page.goto(src.url, { timeout: TIMEOUT, waitUntil: "domcontentloaded" });
-          const deadline = Date.now() + TIMEOUT;
-          while (Date.now() < deadline) {
-            if (foundUrl) break;
-            await page.waitForTimeout(500);
-          }
-        } catch { /* timeout */ }
-        finally { await page.close(); await ctx.close(); }
-
-        if (foundUrl) return { streamUrl: foundUrl, proxyHeaders: foundHeaders, source: src.title };
-      }
-    } finally {
-      await browser.close();
-    }
-  } catch {
-    console.log("[stream] Playwright not available, falling back to scraper");
-  }
-  return null;
+function buildScraperSources(id: string) {
+  return [
+    { title: "VidKing",   url: `https://www.vidking.net/embed/movie/${id}?autoplay=1` },
+    { title: "VidLink",   url: `https://vidlink.pro/movie/${id}?autoplay=1&player=jw&primaryColor=006fee` },
+    { title: "VidLink 2", url: `https://vidlink.pro/movie/${id}?autoplay=1&primaryColor=006fee` },
+    { title: "NontonGo",  url: `https://www.nontongo.win/embed/movie/${id}?autoplay=1` },
+  ];
 }
 
-// ── Static scraper fallback (no browser) ─────────────────────────────────────
+function buildEmbedFallbacks(id: string): string[] {
+  return [
+    `https://moviesapi.club/movie/${id}?autoplay=1`,
+    `https://player.videasy.net/movie/${id}`,
+    `https://vidsrc.win/watch/${id}?autoPlay=1&muted=0`,   
+    `https://www.vidking.net/embed/movie/${id}?autoplay=1`,
+    `https://vidlink.pro/movie/${id}?autoplay=1&player=jw`,
+    `https://www.nontongo.win/embed/movie/${id}?autoplay=1`,
+  ];
+}
+
+function safeOrigin(url: string) {
+  try { const u = new URL(url); return `${u.protocol}//${u.host}`; } catch { return ""; }
+}
+
+function embedOnly(id: string): EmbedOnlyResult {
+  const embedFallbacks = buildEmbedFallbacks(id);
+  return { streamUrl: null, proxyHeaders: null, source: null, embedUrl: embedFallbacks[0]!, embedFallbacks };
+}
+
+// ── Static scraper ────────────────────────────────────────────────────────────
+
+async function fetchText(url: string, referer: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": UA, "Referer": referer, "Accept": "*/*", "Accept-Language": "en-US,en;q=0.9" },
+      redirect: "follow",
+      signal: AbortSignal.timeout(HTTP_TIMEOUT),
+    });
+    return res.ok ? res.text() : null;
+  } catch { return null; }
+}
+
 function extractUrls(text: string): string[] {
   const hits: string[] = [];
   let m: RegExpExecArray | null;
@@ -84,7 +100,7 @@ function extractUrls(text: string): string[] {
     const u = m[0].replace(/['"\\]+$/, "");
     if (!SKIP_RE.test(u)) hits.push(u);
   }
-  if (hits.length === 0) {
+  if (!hits.length) {
     MP4_FULL.lastIndex = 0;
     while ((m = MP4_FULL.exec(text)) !== null) {
       const u = m[0].replace(/['"\\]+$/, "");
@@ -94,90 +110,210 @@ function extractUrls(text: string): string[] {
   return [...new Set(hits)];
 }
 
-async function fetchText(url: string, referer: string): Promise<string | null> {
+async function probeUrl(rawUrl: string, referer: string): Promise<boolean> {
+  let cleanUrl = rawUrl;
   try {
-    const res = await fetch(url, {
-      headers: { "User-Agent": UA, "Referer": referer, "Accept": "*/*", "Accept-Language": "en-US,en;q=0.9" },
-      redirect: "follow",
-      signal: AbortSignal.timeout(10_000),
+    const u = new URL(rawUrl);
+    u.searchParams.delete("headers");
+    u.searchParams.delete("host");
+    if (u.pathname.includes("%25")) u.pathname = decodeURIComponent(u.pathname);
+    cleanUrl = u.toString();
+  } catch {}
+  try {
+    const res = await fetch(cleanUrl, {
+      method: "GET",
+      headers: { "User-Agent": UA, "Referer": referer, "Origin": safeOrigin(referer), "Accept": "*/*", "Range": "bytes=0-1023" },
+      signal: AbortSignal.timeout(5_000),
     });
-    return res.ok ? res.text() : null;
-  } catch { return null; }
+    return res.status >= 200 && res.status < 400;
+  } catch { return false; }
 }
 
-async function scrape(url: string, referer: string, depth = 0, seen = new Set<string>()): Promise<{ streamUrl: string; referer: string } | null> {
-  if (depth > 3 || seen.has(url)) return null;
-  seen.add(url);
-  const html = await fetchText(url, referer);
+interface RawStream { streamUrl: string; proxyHeaders: Record<string, string>; source: string; }
+
+async function scrapeOne(src: { title: string; url: string }): Promise<RawStream | null> {
+  const html = await fetchText(src.url, src.url);
   if (!html) return null;
+  let candidates = extractUrls(html);
 
-  const direct = extractUrls(html);
-  if (direct.length) return { streamUrl: direct[0]!, referer: url };
-
-  // Check external scripts
-  const scripts: string[] = [];
-  let m: RegExpExecArray | null;
-  SCRIPT_RE.lastIndex = 0;
-  while ((m = SCRIPT_RE.exec(html)) !== null) {
-    const src = m[1]!;
-    if (!SKIP_RE.test(src)) scripts.push(new URL(src, url).toString());
-    if (scripts.length >= 6) break;
-  }
-  for (const s of scripts) {
-    if (seen.has(s)) continue;
-    seen.add(s);
-    const js = await fetchText(s, url);
-    if (js) { const hits = extractUrls(js); if (hits.length) return { streamUrl: hits[0]!, referer: url }; }
+  if (!candidates.length) {
+    const seen = new Set([src.url]);
+    let m: RegExpExecArray | null;
+    SCRIPT_RE.lastIndex = 0;
+    const scripts: string[] = [];
+    while ((m = SCRIPT_RE.exec(html)) !== null) {
+      try { scripts.push(new URL(m[1]!, src.url).toString()); } catch {}
+      if (scripts.length >= 6) break;
+    }
+    for (const s of scripts) {
+      if (seen.has(s)) continue; seen.add(s);
+      const js = await fetchText(s, src.url);
+      if (js) { candidates = extractUrls(js); if (candidates.length) break; }
+    }
   }
 
-  // Follow iframes
-  if (depth < 2) {
+  if (!candidates.length) {
+    let m: RegExpExecArray | null;
     IFRAME_RE.lastIndex = 0;
     while ((m = IFRAME_RE.exec(html)) !== null) {
-      const src = m[1]!;
-      if (SKIP_RE.test(src)) continue;
-      const result = await scrape(new URL(src, url).toString(), url, depth + 1, seen);
-      if (result) return result;
+      if (SKIP_RE.test(m[1]!)) continue;
+      try {
+        const abs = new URL(m[1]!, src.url).toString();
+        const sub = await fetchText(abs, src.url);
+        if (sub) { candidates = extractUrls(sub); if (candidates.length) break; }
+      } catch {}
+    }
+  }
+
+  for (const c of candidates) {
+    if (await probeUrl(c, src.url)) {
+      return { streamUrl: c, proxyHeaders: { "referer": src.url, "origin": safeOrigin(src.url), "user-agent": UA }, source: src.title };
     }
   }
   return null;
 }
 
-// ── API handler ───────────────────────────────────────────────────────────────
+function tryScraper(id: string): Promise<RawStream | null> {
+  const sources = buildScraperSources(id);
+  return new Promise((resolve) => {
+    let resolved = false, pending = sources.length;
+    if (!pending) { resolve(null); return; }
+    for (const src of sources) {
+      scrapeOne(src)
+        .then((r) => { pending--; if (r && !resolved) { resolved = true; resolve(r); } else if (!pending && !resolved) resolve(null); })
+        .catch(() => { pending--; if (!pending && !resolved) resolve(null); });
+    }
+  });
+}
+
+function tryPlaywright(id: string): Promise<RawStream | null> {
+  return new Promise(async (resolve) => {
+    let chromium: any;
+    try { ({ chromium } = await import("playwright")); }
+    catch { resolve(null); return; }
+
+    let browser: any;
+    try { browser = await chromium.launch({ headless: true }); }
+    catch { resolve(null); return; }
+
+    const sources = buildPlaywrightSources(id);
+    let resolved = false, pending = sources.length;
+
+    const done = (result: RawStream | null) => {
+      pending--;
+      if (result && !resolved) {
+        resolved = true;
+        resolve(result);
+        setTimeout(() => browser.close().catch(() => {}), 300);
+      } else if (pending <= 0 && !resolved) {
+        resolved = true;
+        resolve(null);
+        browser.close().catch(() => {});
+      }
+    };
+
+    setTimeout(() => {
+      if (!resolved) { resolved = true; resolve(null); browser.close().catch(() => {}); }
+    }, PW_TIMEOUT + 5000);
+
+    for (const src of sources) {
+      (async () => {
+        let ctx: any, page: any;
+        try {
+          ctx  = await browser.newContext({ userAgent: UA, viewport: { width: 1280, height: 720 } });
+          page = await ctx.newPage();
+        } catch { done(null); return; }
+
+        let found = false;
+        page.on("request", (req: any) => {
+          if (found || resolved) return;
+          const url: string = req.url();
+          if (SKIP_RE.test(url) || !M3U8_RE.test(url)) return;
+          found = true;
+          const headers = req.headers();
+          page.close().catch(() => {});
+          ctx.close().catch(() => {});
+          console.log(`[stream] ✓ PW ${src.title} → ${url.slice(0, 70)}`);
+          done({ streamUrl: url, proxyHeaders: headers, source: src.title });
+        });
+
+        try {
+          await page.goto(src.url, { timeout: PW_TIMEOUT, waitUntil: "domcontentloaded" });
+          const deadline = Date.now() + PW_TIMEOUT;
+          while (Date.now() < deadline && !found && !resolved) {
+            await page.waitForTimeout(300);
+          }
+        } catch {}
+
+        if (!found) {
+          console.log(`[stream] ✗ PW ${src.title}`);
+          page.close().catch(() => {});
+          ctx.close().catch(() => {});
+          done(null);
+        }
+      })();
+    }
+  });
+}
+
+async function extractForId(id: string): Promise<ApiResult> {
+  const embedFallbacks = buildEmbedFallbacks(id);
+  const embedUrl       = embedFallbacks[0]!;
+
+  const raw = await Promise.race([tryScraper(id), tryPlaywright(id)]);
+
+  if (raw) {
+    console.log(`[stream] ✓ ${raw.source} for ${id}`);
+    return { streamUrl: raw.streamUrl, proxyHeaders: raw.proxyHeaders, source: raw.source, embedUrl, embedFallbacks };
+  }
+
+  console.log(`[stream] ✗ all failed for ${id}`);
+  return { streamUrl: null, proxyHeaders: null, source: null, embedUrl, embedFallbacks };
+}
+
+// ── Handler ───────────────────────────────────────────────────────────────────
+
 export async function GET(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Missing ?id=" }, { status: 400 });
 
-  const sources  = buildSources(id);
-  const embedUrl = sources[0]!.url; // always return first source as embed fallback
-
-  try {
-    // 1. Try Playwright (captures real headers — handles JS-rendered streams)
-    const pw = await tryPlaywright(sources);
-    if (pw) {
-      return NextResponse.json({ ...pw, embedUrl }, {
-        headers: { "Cache-Control": "public, max-age=900" },
-      });
-    }
-
-    // 2. Try static scraper (fast, no browser)
-    for (const src of sources) {
-      const result = await scrape(src.url, src.url);
-      if (result) {
-        return NextResponse.json({
-          streamUrl:    result.streamUrl,
-          proxyHeaders: { "referer": result.referer, "origin": new URL(result.referer).origin },
-          source:       src.title,
-          embedUrl,
-        }, { headers: { "Cache-Control": "public, max-age=900" } });
-      }
-    }
-
-    // 3. Last resort: return embed URL so player shows iframe
-    return NextResponse.json({ embedUrl }, { status: 404 });
-
-  } catch (err) {
-    console.error("[stream]", err);
-    return NextResponse.json({ error: "Internal server error", embedUrl }, { status: 500 });
+  // Cache hit
+  const cached = serverCache.get(id);
+  if (cached && cached.expires > Date.now()) {
+    console.log(`[stream] cache hit ${id}`);
+    return NextResponse.json(cached.data, {
+      status: cached.data.streamUrl ? 200 : 404,
+      headers: { "X-Cache": "HIT" },
+    });
   }
+
+  // In-flight dedup
+  if (serverInflight.has(id)) {
+    console.log(`[stream] dedup wait ${id}`);
+    const data = await serverInflight.get(id)!;
+    return NextResponse.json(data, {
+      status: data.streamUrl ? 200 : 404,
+      headers: { "X-Cache": "WAIT" },
+    });
+  }
+
+  // New extraction
+  console.log(`[stream] id=${id}`);
+  const promise = extractForId(id).then((data) => {
+    serverCache.set(id, { data, expires: Date.now() + CACHE_TTL });
+    serverInflight.delete(id);
+    return data;
+  }).catch((err) => {
+    serverInflight.delete(id);
+    console.error("[stream] fatal:", err);
+    return embedOnly(id);
+  });
+
+  serverInflight.set(id, promise);
+
+  const data = await promise;
+  return NextResponse.json(data, {
+    status: data.streamUrl ? 200 : 404,
+    headers: { "Cache-Control": "public, max-age=600" },
+  });
 }

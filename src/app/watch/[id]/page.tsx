@@ -8,92 +8,82 @@ import AdsenseBanner from "@/components/ads/AdsenseBanner";
 
 import ClientMoviePlayer from "@/components/player/ClientMoviePlayer";
 
-
+import { getOrSyncMovie } from "@/services/cmsdb";
 
 import {
   getMovieDetails,
   getTrendingMovies,
 } from "@/services/tmdb";
 
-interface Props { params: Promise<{ id: string; }>; }
+interface Props {
+  params: Promise<{ id: string }>;
+}
 
-export default async function WatchPage({
-  params,
-}: Props) {
-  const movie = await getMovieDetails((await params).id);
-  //console.log(movie);
-  const recommendedMovies =
-    await getTrendingMovies();
+export default async function WatchPage({ params }: Props) {
+  const { id } = await params;
+
+  const [movie, movieSync, recommendedMovies] =
+    await Promise.all([
+      getMovieDetails(id),
+      getOrSyncMovie(id),
+      getTrendingMovies(),
+    ]);
+
+  const finalMovie = {
+    ...movie,
+    ...movieSync,
+    id: movie.id || movieSync.tmdb_id,
+    title: movie.title || movieSync.title,
+    overview: movie.overview || movieSync.overview,
+    release_date:
+      movie.release_date || movieSync.release_date,
+    runtime: movie.runtime || movieSync.runtime || 120,
+    poster_path:
+      movie.poster_path || movieSync.poster_path,
+    backdrop_path:
+      movie.backdrop_path || movieSync.backdrop_path,
+  };
 
   return (
     <main className="flex min-h-screen bg-[#050816] text-white">
-      {/* SIDEBAR */}
       <Sidebar />
 
-      {/* CONTENT */}
       <section className="flex-1 md:ml-64">
-        {/* HEADER */}
         <Header />
 
-        {/* PLAYER LAYOUT */}
         <div className="p-4 md:p-8">
           <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-8">
-            {/* LEFT PLAYER */}
             <div>
-              {/* MOVIE TITLE */}
               <div className="mb-6">
                 <h1 className="text-3xl md:text-5xl font-black">
-                  {movie.title}
+                  {finalMovie.title}
                 </h1>
 
                 <p className="text-gray-400 mt-2">
-                  {movie.release_date?.split("-")[0]}
+                  {finalMovie.release_date?.split("-")[0]}
                 </p>
               </div>
 
-              {/* VIDEO PLAYER */}            
-              <ClientMoviePlayer movie={movie} />
- 
+              <ClientMoviePlayer movie={finalMovie} />
 
-              {/* MOVIE DESCRIPTION */}
-              <div
-                className="
-                  mt-8
-                  rounded-3xl
-                  border
-                  border-white/10
-                  bg-white/5
-                  p-6
-                  backdrop-blur-xl
-                "
-              >
+              <div className="mt-8 rounded-3xl border border-white/10 bg-white/5 p-6 backdrop-blur-xl">
                 <h2 className="text-2xl font-bold mb-4">
                   Overview
                 </h2>
 
                 <p className="text-gray-300 leading-relaxed">
-                  {movie.overview}
+                  {finalMovie.overview}
                 </p>
               </div>
             </div>
 
-            {/* RIGHT SIDEBAR */}
             <aside className="space-y-6">
-              
-              {/* ADSENSE */}
-              <AdsenseBanner adSlot="1234567890" className="h-[600px]" />
+              <AdsenseBanner
+                adSlot="1234567890"
+                className="h-[600px]"
+              />
 
-              {/* SPONSORED */}
-              <div
-                className="
-                  rounded-3xl
-                  border
-                  border-white/10
-                  bg-white/5
-                  p-5
-                  backdrop-blur-xl
-                "
-              >
+              <div className="rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
                 <h3 className="text-xl font-bold mb-4">
                   Sponsored
                 </h3>
@@ -121,17 +111,7 @@ export default async function WatchPage({
                 </div>
               </div>
 
-              {/* RECOMMENDED */}
-              <div
-                className="
-                  rounded-3xl
-                  border
-                  border-white/10
-                  bg-white/5
-                  p-5
-                  backdrop-blur-xl
-                "
-              >
+              <div className="rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
                 <h3 className="text-2xl font-black mb-5">
                   Recommended
                 </h3>
@@ -139,7 +119,7 @@ export default async function WatchPage({
                 <div className="space-y-5">
                   {recommendedMovies
                     .slice(0, 4)
-                    .map((movie:any) => (
+                    .map((movie: any) => (
                       <MovieCard
                         key={movie.id}
                         movie={movie}

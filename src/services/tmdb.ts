@@ -14,20 +14,36 @@ const fetchOptions: RequestInit = {
 /* TRENDING MOVIES */
 export async function getTrendingMovies() {
   try {
-    const response = await fetch(
-      `${BASE_URL}/trending/movie/week?api_key=${API_KEY}`,
+    const page1 = await fetch(
+      `${BASE_URL}/trending/movie/week?api_key=${API_KEY}&page=1`,
       fetchOptions
     );
 
-    const data = await response.json();
-
-    return data.results || [];
-  } catch (error) {
-    console.error(
-      "Trending Movies Error:",
-      error
+    const page2 = await fetch(
+      `${BASE_URL}/trending/movie/week?api_key=${API_KEY}&page=2`,
+      fetchOptions
     );
 
+    const data1 = await page1.json();
+    const data2 = await page2.json();
+
+    const movies = [
+      ...(data1.results || []),
+      ...(data2.results || []),
+    ];
+
+    const uniqueMovies = Array.from(
+      new Map(
+        movies.map((movie: any) => [
+          movie.id,
+          movie,
+        ])
+      ).values()
+    );
+
+    return uniqueMovies.slice(0, 30);
+  } catch (error) {
+    console.error("Trending Movies Error:", error);
     return [];
   }
 }
@@ -35,14 +51,27 @@ export async function getTrendingMovies() {
 /* POPULAR MOVIES */
 export async function getPopularMovies() {
   try {
-    const response = await fetch(
-      `${BASE_URL}/movie/popular?api_key=${API_KEY}`,
+    const response1 = await fetch(
+      `${BASE_URL}/movie/popular?api_key=${API_KEY}&page=1`,
       fetchOptions
     );
 
-    const data = await response.json();
+    const response2 = await fetch(
+      `${BASE_URL}/movie/popular?api_key=${API_KEY}&page=2`,
+      fetchOptions
+    );
 
-    return data.results || [];
+    const data1 = await response1.json();
+    const data2 = await response2.json();
+
+    //const data = await response.json();
+    const movies = [
+      ...(data1.results || []),
+      ...(data2.results || []),
+    ];
+
+    return movies.slice(0, 30) || [];
+    //return data.results || [];
   } catch (error) {
     console.error(error);
 

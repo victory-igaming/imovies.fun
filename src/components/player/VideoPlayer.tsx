@@ -1,5 +1,6 @@
 "use client";
-import { useEffect} from "react";
+
+import { useEffect } from "react";
 import { Loader2 } from "lucide-react";
 
 interface Props {
@@ -11,7 +12,9 @@ interface Props {
 
   setPlaying: (value: boolean) => void;
 
-  setIsIframeActive: ( value: boolean ) => void;
+  setIsIframeActive: (
+    value: boolean
+  ) => void;
 
   isZoomed: boolean;
 }
@@ -22,43 +25,81 @@ export default function VideoPlayer({
   setLoading,
   setPlaying,
   setIsIframeActive,
-  isZoomed,
 }: Props) {
+  /*
+  |--------------------------------------------------------------------------
+  | PLAYER LOAD HANDLER
+  |--------------------------------------------------------------------------
+  */
+  useEffect(() => {
+    setLoading(true);
 
- 
-/* WATCH TIME TRACKER */
-useEffect(() => {
-  const handleVisibility =
-    () => {
-      const active =
-        !document.hidden;
+    setPlaying(true);
 
-      setIsIframeActive(
-        active
-      );
+    setIsIframeActive(true);
 
-      setPlaying(active);
-    };
+    /*
+    |--------------------------------------------------------------------------
+    | SAFETY TIMEOUT
+    |--------------------------------------------------------------------------
+    */
+    const timeout =
+      setTimeout(() => {
+        setLoading(false);
+      }, 12000);
 
-  document.addEventListener(
-    "visibilitychange",
-    handleVisibility
-  );
+    return () =>
+      clearTimeout(timeout);
+  }, [
+    source,
+    setLoading,
+    setPlaying,
+    setIsIframeActive,
+  ]);
 
-  return () => {
-    document.removeEventListener(
+  /*
+  |--------------------------------------------------------------------------
+  | WATCH TIME TRACKER
+  |--------------------------------------------------------------------------
+  */
+  useEffect(() => {
+    const handleVisibility =
+      () => {
+        const active =
+          !document.hidden;
+
+        setIsIframeActive(
+          active
+        );
+
+        setPlaying(active);
+      };
+
+    document.addEventListener(
       "visibilitychange",
       handleVisibility
     );
-  };
-}, []);
 
-
-
+    return () => {
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibility
+      );
+    };
+  }, [
+    setIsIframeActive,
+    setPlaying,
+  ]);
 
   return (
-    <div className="relative aspect-video">
-
+    <div
+      className="
+        relative
+        aspect-video
+        overflow-hidden
+        bg-black
+      "
+    >
       {/* LOADING SCREEN */}
       {loading && (
         <div
@@ -91,21 +132,35 @@ useEffect(() => {
             size={60}
           />
 
-          <p className="mt-6 text-gray-400">Loading cinematic experience...</p>
+          <p className="mt-6 text-gray-400">
+            Loading cinematic experience...
+          </p>
         </div>
       )}
 
       {/* VIDEO IFRAME */}
       <iframe
+        key={source}
         src={source}
         allowFullScreen
-        allow="autoplay; fullscreen"
-        className={`
-          absolute inset-0 h-full w-full border-0 transition-transform duration-500
-          ${isZoomed ? "scale-125" : "scale-100"} 
-        `}
-        onLoad={() => setLoading(false)}
+        allow="
+          autoplay;
+          fullscreen;
+          encrypted-media;
+          picture-in-picture
+        "
+        referrerPolicy="no-referrer"
         title="VIDEO"
+        className="
+          absolute
+          inset-0
+          h-full
+          w-full
+          border-0
+        "
+        onLoad={() =>
+          setLoading(false)
+        }
       />
     </div>
   );

@@ -184,6 +184,7 @@ export default function HeroBanner({
             {/* PLAY BUTTON */}
             <Link href={`/watch/${movie.id}`}>
               <button
+              suppressHydrationWarning
                 className="
                   group
                   flex

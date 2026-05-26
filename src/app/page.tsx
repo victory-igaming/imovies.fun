@@ -64,7 +64,11 @@ export default async function HomePage() {
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-3xl font-black">
                 Trending Movies
+                <div className="text-red-500 text-4xl">
+  {movies.length}
+</div>
               </h2>
+              
             </div>
 
             <div
