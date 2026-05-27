@@ -15,69 +15,92 @@ export async function OPTIONS() {
 }
 
 /**
- * Decode a URL pathname that was double-encoded.
- * storm.vodvidl.site encodes its path once; when it ends up in our proxy URL
- * it gets encoded again, producing %252F instead of %2F.
- * We must decode once before fetching.
+ * Parse a CDN URL without using new URL() to mutate the path.
+ *
+ * The problem with URL():
+ *   u.pathname = decodeURIComponent(u.pathname)
+ *   → URL re-encodes it on assignment, undoing the fix.
+ *
+ * Strategy: work entirely on the raw string.
+ *   1. Split path and query manually
+ *   2. Strip ?headers= and ?host= from query
+ *   3. Fully decode the path (handles %252F→%2F→/ in one pass)
+ *   4. Re-assemble
  */
-function fixDoubleEncoding(pathname: string): string {
-  // Keep decoding while %25 (encoded %) is present
-  let prev = pathname;
-  let next = decodeURIComponent(pathname);
-  while (next !== prev && next.includes("%")) {
-    // Stop if decoding would go too far (plain text with no more encoded chars)
-    if (!next.includes("%2") && !next.includes("%3") && !next.includes("%5")) break;
-    prev = next;
-    try { next = decodeURIComponent(next); } catch { break; }
-  }
-  return prev; // use the last stable decoded form
-}
-
-function parseCdnUrl(raw: string): { cleanUrl: string; embeddedHeaders: Record<string, string> } {
+function parseCdnUrl(raw: string): {
+  cleanUrl: string;
+  embeddedHeaders: Record<string, string>;
+} {
   let embeddedHeaders: Record<string, string> = {};
-  let cleanUrl = raw;
-  try {
-    const u = new URL(raw);
 
-    // Extract ?headers= JSON baked into CDN URLs
-    const h = u.searchParams.get("headers");
-    if (h) {
-      try { embeddedHeaders = JSON.parse(decodeURIComponent(h)); } catch {
-        try { embeddedHeaders = JSON.parse(h); } catch {}
+  // Split path from query string
+  const qIdx      = raw.indexOf("?");
+  const rawPath   = qIdx === -1 ? raw        : raw.slice(0, qIdx);
+  const rawQuery  = qIdx === -1 ? ""         : raw.slice(qIdx + 1);
+
+  // Parse query params — drop ?headers= and ?host=, keep everything else
+  const keepParams: string[] = [];
+  for (const seg of rawQuery.split("&")) {
+    if (!seg) continue;
+    const eq  = seg.indexOf("=");
+    const key = eq === -1 ? seg : seg.slice(0, eq);
+    const val = eq === -1 ? ""  : seg.slice(eq + 1);
+
+    if (key === "headers") {
+      try { embeddedHeaders = JSON.parse(decodeURIComponent(val)); } catch {
+        try { embeddedHeaders = JSON.parse(val); } catch {}
       }
-      u.searchParams.delete("headers");
+    } else if (key === "host") {
+      // drop — never rewrite host
+    } else {
+      keepParams.push(seg);
     }
+  }
 
-    // Drop ?host= — never rewrite the host
-    u.searchParams.delete("host");
-
-    // Fix double-encoded pathname (storm.vodvidl.site 400 fix)
-    if (u.pathname.includes("%25")) {
-      u.pathname = fixDoubleEncoding(u.pathname);
+  // Fully decode the path.
+  // storm.vodvidl.site needs /proxy/file2/<token>/playlist.m3u8
+  // but we receive it as /proxy/file2%2F<token>%2Fplaylist.m3u8 (or %252F etc.)
+  // decodeURIComponent handles all levels in one shot.
+  let cleanPath = rawPath;
+  try {
+    // Keep decoding until stable (handles double/triple encoding)
+    let prev = "";
+    while (prev !== cleanPath) {
+      prev = cleanPath;
+      cleanPath = decodeURIComponent(cleanPath);
     }
+  } catch {
+    cleanPath = rawPath; // malformed — use original
+  }
 
-    cleanUrl = u.toString();
-  } catch {}
+  const cleanUrl = keepParams.length > 0
+    ? `${cleanPath}?${keepParams.join("&")}`
+    : cleanPath;
+
   return { cleanUrl, embeddedHeaders };
 }
 
 function rewriteM3u8(text: string, baseUrl: string, headersJson: string): string {
-  const baseDir = baseUrl.substring(0, baseUrl.lastIndexOf("/") + 1);
+  // baseUrl is already decoded — derive the base directory from it
+  const noQuery = baseUrl.split("?")[0]!;
+  const baseDir = noQuery.substring(0, noQuery.lastIndexOf("/") + 1);
+
   return text.split("\n").map((line) => {
     const t = line.trim();
     if (!t || t.startsWith("#")) return line;
 
-    let abs = t.startsWith("http") ? t
-            : t.startsWith("//")   ? "https:" + t
-            : baseDir + t;
+    let abs: string;
+    if (t.startsWith("http://") || t.startsWith("https://")) {
+      abs = t;
+    } else if (t.startsWith("//")) {
+      abs = "https:" + t;
+    } else {
+      abs = baseDir + t;
+    }
 
-    try {
-      const u = new URL(abs);
-      u.searchParams.delete("headers");
-      u.searchParams.delete("host");
-      if (u.pathname.includes("%25")) u.pathname = fixDoubleEncoding(u.pathname);
-      abs = u.toString();
-    } catch {}
+    // Strip embedded ?headers=/?host= from segment URLs
+    const { cleanUrl } = parseCdnUrl(abs);
+    abs = cleanUrl;
 
     return `/api/proxy?url=${encodeURIComponent(abs)}&headers=${encodeURIComponent(headersJson)}`;
   }).join("\n");
@@ -87,18 +110,16 @@ export async function GET(req: NextRequest) {
   const rawUrl      = req.nextUrl.searchParams.get("url") ?? "";
   const headersJson = req.nextUrl.searchParams.get("headers") ?? "{}";
 
-  if (!rawUrl) return NextResponse.json({ error: "Missing ?url=" }, { status: 400, headers: CORS });
+  if (!rawUrl) {
+    return NextResponse.json({ error: "Missing ?url=" }, { status: 400, headers: CORS });
+  }
 
   let captured: Record<string, string> = {};
   try { captured = JSON.parse(headersJson); } catch {}
 
   const { cleanUrl, embeddedHeaders } = parseCdnUrl(rawUrl);
 
-  let target: URL;
-  try { target = new URL(cleanUrl); } catch {
-    return NextResponse.json({ error: "Invalid URL" }, { status: 400, headers: CORS });
-  }
-  if (!["http:", "https:"].includes(target.protocol)) {
+  if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
     return NextResponse.json({ error: "Only http/https allowed" }, { status: 400, headers: CORS });
   }
 
@@ -108,7 +129,9 @@ export async function GET(req: NextRequest) {
   const origin =
     captured["origin"]   ?? captured["Origin"]   ??
     embeddedHeaders["origin"]  ?? embeddedHeaders["Origin"]  ??
-    (referer ? (() => { try { const u = new URL(referer); return `${u.protocol}//${u.host}`; } catch { return ""; } })() : "");
+    (referer ? (() => {
+      try { const u = new URL(referer); return `${u.protocol}//${u.host}`; } catch { return ""; }
+    })() : "");
 
   const fetchHeaders: Record<string, string> = {
     "user-agent":      UA,
@@ -121,13 +144,13 @@ export async function GET(req: NextRequest) {
   if (captured["range"])  fetchHeaders["range"]  = captured["range"];
 
   try {
-    const upstream = await fetch(target.toString(), {
+    const upstream = await fetch(cleanUrl, {
       headers: fetchHeaders,
       signal: AbortSignal.timeout(30_000),
     });
 
     if (!upstream.ok) {
-      console.error(`[proxy] ${upstream.status} ${target.toString().slice(0, 80)}`);
+      console.error(`[proxy] ${upstream.status} for ${cleanUrl.slice(0, 100)}`);
       return new NextResponse(`Upstream ${upstream.status}`, { status: upstream.status, headers: CORS });
     }
 

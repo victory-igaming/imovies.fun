@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  useRef,
-  useEffect,
-  useMemo,
-  useState,
-  useCallback,
-} from "react";
+import { useRef, useEffect, useMemo, useState, useCallback } from "react";
 
 import useAdInjection from "@/hooks/useAdInjection";
 
@@ -41,11 +35,35 @@ export default function MoviePlayer({ movie }: Props) {
 
   const players = useMemo(
   () => [
+    /*
+    |--------------------------------------------------------------------------
+    | BEST WORKING PLAYERS FIRST
+    |--------------------------------------------------------------------------
+    */
+
     {
-      title: "VidSrc V2",
-      source: `https://vidsrc.cc/v2/embed/movie/${movie.id}?autoPlay=1&muted=${
+      title: "Videasy",
+      source: `https://player.videasy.net/movie/${movie.id}`,
+    },
+
+    {
+      title: "NontonGo",
+      source: `https://www.nontongo.win/embed/movie/${movie.id}?autoplay=1&muted=${
         isMuted ? 1 : 0
       }`,
+    },
+
+    /*
+    |--------------------------------------------------------------------------
+    | FALLBACK PLAYERS
+    |--------------------------------------------------------------------------
+    */
+
+    {
+      title: "VidLink",
+      source: `https://vidlink.pro/movie/${movie.id}?autoplay=1&muted=${
+        isMuted ? 1 : 0
+      }&player=jw&primaryColor=006fee`,
     },
 
     {
@@ -56,10 +74,10 @@ export default function MoviePlayer({ movie }: Props) {
     },
 
     {
-      title: "VidLink",
-      source: `https://vidlink.pro/movie/${movie.id}?autoplay=1&muted=${
+      title: "VidSrc V2",
+      source: `https://vidsrc.cc/v2/embed/movie/${movie.id}?autoPlay=1&muted=${
         isMuted ? 1 : 0
-      }&player=jw`,
+      }`,
     },
 
     {
@@ -75,10 +93,13 @@ export default function MoviePlayer({ movie }: Props) {
   const PLAYER = players[selectedSource];
 
   const handleFallback = useCallback(() => {
-    setUseFallbackPlayer(true);
-    setSourceName(PLAYER.title);
-    setLoading(true);
-  }, [PLAYER.title]);
+  console.warn("[player] Switching to iframe fallback player");
+
+  setUseFallbackPlayer(true);
+  setSourceName(PLAYER?.title || "Iframe Backup");
+  setLoading(false);
+  setPlaying(true);
+}, [PLAYER]);
 
   const handleSourceReady = useCallback((name: string) => {
     setSourceName(name);
@@ -108,16 +129,10 @@ export default function MoviePlayer({ movie }: Props) {
       setIsZoomed(Boolean(document.fullscreenElement));
     };
 
-    document.addEventListener(
-      "fullscreenchange",
-      handleFullscreenChange
-    );
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
 
     return () => {
-      document.removeEventListener(
-        "fullscreenchange",
-        handleFullscreenChange
-      );
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
     };
   }, []);
 
@@ -172,10 +187,10 @@ export default function MoviePlayer({ movie }: Props) {
           onLoadingChange={setLoading}
           onTimeUpdate={(seconds) => setWatchTime(seconds)}
           onSourceReady={handleSourceReady}
-          onFallback={handleFallback}          
+          onFallback={handleFallback}
         />
       ) : (
-        <VideoPlayer
+       <VideoPlayer
           key={`fallback-${movie.id}-${selectedSource}`}
           source={PLAYER.source}
           loading={loading}
@@ -183,22 +198,36 @@ export default function MoviePlayer({ movie }: Props) {
           setPlaying={setPlaying}
           setIsIframeActive={setIsIframeActive}
           isZoomed={isZoomed}
+          onFailed={() => {
+            const nextIndex = selectedSource + 1;
+
+            if (nextIndex < players.length) {
+              setSelectedSource(nextIndex);
+              setSourceName(players[nextIndex].title);
+              setLoading(true);
+            } else {
+              setLoading(false);
+              setSourceName("No working player");
+            }
+          }}
         />
       )}
 
-      <PlayerControls
-  movie={movie}
-  sourceName={useFallbackPlayer ? PLAYER.title : sourceName}
-  onOpenSources={() => setShowSources(true)}
-  isMuted={isMuted}
-  onToggleMute={() => setIsMuted((prev) => !prev)}
-  isZoomed={isZoomed}
-  onToggleZoom={handleToggleFullscreen}
-  playing={playing && !showAd}
-  onTogglePlay={() => setPlaying((prev) => !prev)}
-  currentTime={watchTime}
-  duration={(movie.runtime || 120) * 60}
-/>
+      {!useFallbackPlayer && (
+        <PlayerControls
+          movie={movie}
+          sourceName={useFallbackPlayer ? PLAYER.title : sourceName}
+          onOpenSources={() => setShowSources(true)}
+          isMuted={isMuted}
+          onToggleMute={() => setIsMuted((prev) => !prev)}
+          isZoomed={isZoomed}
+          onToggleZoom={handleToggleFullscreen}
+          playing={playing && !showAd}
+          onTogglePlay={() => setPlaying((prev) => !prev)}
+          currentTime={watchTime}
+          duration={(movie.runtime || 120) * 60}
+        />
+      )}
 
       {showAd && currentAd && (
         <AdOverlayPlayer
@@ -223,6 +252,7 @@ export default function MoviePlayer({ movie }: Props) {
         />
       )}
 
+  {useFallbackPlayer && (
       <SourceSelector
         open={showSources}
         players={players}
@@ -235,6 +265,7 @@ export default function MoviePlayer({ movie }: Props) {
           setShowSources(false);
         }}
       />
+       )}
     </div>
   );
 }

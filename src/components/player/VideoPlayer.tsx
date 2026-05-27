@@ -1,22 +1,16 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Loader2 } from "lucide-react";
 
 interface Props {
   source: string;
-
   loading: boolean;
-
   setLoading: (value: boolean) => void;
-
   setPlaying: (value: boolean) => void;
-
-  setIsIframeActive: (
-    value: boolean
-  ) => void;
-
+  setIsIframeActive: (value: boolean) => void;
   isZoomed: boolean;
+  onFailed?: () => void;
 }
 
 export default function VideoPlayer({
@@ -25,112 +19,62 @@ export default function VideoPlayer({
   setLoading,
   setPlaying,
   setIsIframeActive,
+  isZoomed,
+  onFailed,
 }: Props) {
-  /*
-  |--------------------------------------------------------------------------
-  | PLAYER LOAD HANDLER
-  |--------------------------------------------------------------------------
-  */
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const loadedRef = useRef(false);
+
   useEffect(() => {
+    loadedRef.current = false;
+
     setLoading(true);
-
     setPlaying(true);
-
     setIsIframeActive(true);
 
-    /*
-    |--------------------------------------------------------------------------
-    | SAFETY TIMEOUT
-    |--------------------------------------------------------------------------
-    */
-    const timeout =
-      setTimeout(() => {
-        setLoading(false);
-      }, 12000);
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
 
-    return () =>
-      clearTimeout(timeout);
-  }, [
-    source,
-    setLoading,
-    setPlaying,
-    setIsIframeActive,
-  ]);
+    timeoutRef.current = setTimeout(() => {
+      if (loadedRef.current) return;
 
-  /*
-  |--------------------------------------------------------------------------
-  | WATCH TIME TRACKER
-  |--------------------------------------------------------------------------
-  */
-  useEffect(() => {
-    const handleVisibility =
-      () => {
-        const active =
-          !document.hidden;
-
-        setIsIframeActive(
-          active
-        );
-
-        setPlaying(active);
-      };
-
-    document.addEventListener(
-      "visibilitychange",
-      handleVisibility
-    );
+      setLoading(false);
+      onFailed?.();
+    }, 10000);
 
     return () => {
-      document.removeEventListener(
-        "visibilitychange",
-        handleVisibility
-      );
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
     };
-  }, [
-    setIsIframeActive,
-    setPlaying,
-  ]);
+  }, [source]);
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      const active = !document.hidden;
+      setIsIframeActive(active);
+      setPlaying(active);
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [setIsIframeActive, setPlaying]);
 
   return (
-    <div
-      className="
-        relative
-        aspect-video
-        overflow-hidden
-        bg-black
-      "
-    >
-      {/* LOADING SCREEN */}
+    <div className="relative aspect-video overflow-hidden bg-black">
       {loading && (
-        <div
-          className="
-            absolute
-            inset-0
-            z-40
-            flex
-            flex-col
-            items-center
-            justify-center
-            bg-black
-          "
-        >
+        <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-black">
           <img
             src="/logos/logo.png"
             alt="iMovies"
-            className="
-              mb-6
-              w-28
-              animate-pulse
-            "
+            className="mb-6 w-28 animate-pulse"
           />
 
-          <Loader2
-            className="
-              animate-spin
-              text-cyan-400
-            "
-            size={60}
-          />
+          <Loader2 className="animate-spin text-cyan-400" size={60} />
 
           <p className="mt-6 text-gray-400">
             Loading cinematic experience...
@@ -138,29 +82,29 @@ export default function VideoPlayer({
         </div>
       )}
 
-      {/* VIDEO IFRAME */}
       <iframe
         key={source}
         src={source}
         allowFullScreen
-        allow="
-          autoplay;
-          fullscreen;
-          encrypted-media;
-          picture-in-picture
-        "
+        allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
         referrerPolicy="no-referrer"
         title="VIDEO"
-        className="
-          absolute
-          inset-0
-          h-full
-          w-full
-          border-0
-        "
-        onLoad={() =>
-          setLoading(false)
-        }
+        className={`absolute inset-0 h-full w-full border-0 transition-transform duration-300 ${
+          isZoomed ? "scale-125" : "scale-100"
+        }`}
+        onLoad={() => {
+          loadedRef.current = true;
+
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+          }
+
+          setTimeout(() => {
+            setLoading(false);
+            setPlaying(true);
+            setIsIframeActive(true);
+          }, 1500);
+        }}
       />
     </div>
   );

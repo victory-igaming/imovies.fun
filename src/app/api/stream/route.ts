@@ -11,9 +11,9 @@ const IFRAME_RE = /<iframe[^>]+src=["']([^"']+)["']/gi;
 const SCRIPT_RE = /<script[^>]+src=["']([^"']+)["']/gi;
 const PW_TIMEOUT   = 15_000;
 const HTTP_TIMEOUT =  7_000;
-const CACHE_TTL    = 10 * 60 * 1000;
+const CACHE_TTL    = 10 * 60 * 1000; // only cache successes
 
-// ── Strict response types — no ambiguous unions ───────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface StreamResult {
   streamUrl: string;
@@ -32,9 +32,10 @@ interface EmbedOnlyResult {
 }
 
 type ApiResult = StreamResult | EmbedOnlyResult;
+interface RawStream { streamUrl: string; proxyHeaders: Record<string, string>; source: string; }
 
-// ── Server-side dedup + cache ─────────────────────────────────────────────────
-const serverCache    = new Map<string, { data: ApiResult; expires: number }>();
+// ── Server-side dedup + cache (successes only) ────────────────────────────────
+const serverCache    = new Map<string, { data: StreamResult; expires: number }>();
 const serverInflight = new Map<string, Promise<ApiResult>>();
 
 // ── Sources ───────────────────────────────────────────────────────────────────
@@ -45,8 +46,8 @@ function buildPlaywrightSources(id: string) {
     { title: "VidLink",   url: `https://vidlink.pro/movie/${id}?autoplay=1&player=jw&primaryColor=006fee` },
     { title: "VidLink 2", url: `https://vidlink.pro/movie/${id}?autoplay=1&primaryColor=006fee` },
     { title: "NontonGo",  url: `https://www.nontongo.win/embed/movie/${id}?autoplay=1` },
-    { title: "Videasy",   url: `https://player.videasy.net/movie/${id}` },   
-    { title: "VidSrc v2", url: `https://vidsrc.win/watch${id}?autoPlay=true` },     
+    { title: "Videasy",   url: `https://player.videasy.net/movie/${id}` },
+    { title: "VidSrc v2", url: `https://vidsrc.win/watch/${id}?autoPlay=true` },
   ];
 }
 
@@ -63,7 +64,7 @@ function buildEmbedFallbacks(id: string): string[] {
   return [
     `https://moviesapi.club/movie/${id}?autoplay=1`,
     `https://player.videasy.net/movie/${id}`,
-    `https://vidsrc.win/watch/${id}?autoPlay=1&muted=0`,   
+    `https://vidsrc.win/watch/${id}?autoPlay=1&muted=0`,
     `https://www.vidking.net/embed/movie/${id}?autoplay=1`,
     `https://vidlink.pro/movie/${id}?autoplay=1&player=jw`,
     `https://www.nontongo.win/embed/movie/${id}?autoplay=1`,
@@ -74,7 +75,7 @@ function safeOrigin(url: string) {
   try { const u = new URL(url); return `${u.protocol}//${u.host}`; } catch { return ""; }
 }
 
-function embedOnly(id: string): EmbedOnlyResult {
+function makeEmbedOnly(id: string): EmbedOnlyResult {
   const embedFallbacks = buildEmbedFallbacks(id);
   return { streamUrl: null, proxyHeaders: null, source: null, embedUrl: embedFallbacks[0]!, embedFallbacks };
 }
@@ -116,7 +117,6 @@ async function probeUrl(rawUrl: string, referer: string): Promise<boolean> {
     const u = new URL(rawUrl);
     u.searchParams.delete("headers");
     u.searchParams.delete("host");
-    if (u.pathname.includes("%25")) u.pathname = decodeURIComponent(u.pathname);
     cleanUrl = u.toString();
   } catch {}
   try {
@@ -128,8 +128,6 @@ async function probeUrl(rawUrl: string, referer: string): Promise<boolean> {
     return res.status >= 200 && res.status < 400;
   } catch { return false; }
 }
-
-interface RawStream { streamUrl: string; proxyHeaders: Record<string, string>; source: string; }
 
 async function scrapeOne(src: { title: string; url: string }): Promise<RawStream | null> {
   const html = await fetchText(src.url, src.url);
@@ -256,15 +254,46 @@ function tryPlaywright(id: string): Promise<RawStream | null> {
   });
 }
 
+/**
+ * Wait for the FIRST non-null result from scraper OR Playwright.
+ * Unlike Promise.race(), this does NOT short-circuit on null —
+ * it waits for both to finish before giving up.
+ *
+ * This prevents the scraper's fast null (4s) from caching a failure
+ * before Playwright finds the stream (15s).
+ */
+function firstSuccess(...promises: Promise<RawStream | null>[]): Promise<RawStream | null> {
+  return new Promise((resolve) => {
+    let settled = 0;
+    for (const p of promises) {
+      p.then((result) => {
+        if (result) { resolve(result); }  // found — resolve immediately
+        else { settled++; if (settled === promises.length) resolve(null); } // all null
+      }).catch(() => {
+        settled++;
+        if (settled === promises.length) resolve(null);
+      });
+    }
+  });
+}
+
 async function extractForId(id: string): Promise<ApiResult> {
   const embedFallbacks = buildEmbedFallbacks(id);
   const embedUrl       = embedFallbacks[0]!;
 
-  const raw = await Promise.race([tryScraper(id), tryPlaywright(id)]);
+  // Both run in parallel; return as soon as either succeeds.
+  // Only fall back to embedOnly when BOTH finish with null.
+  const raw = await firstSuccess(tryScraper(id), tryPlaywright(id));
 
   if (raw) {
     console.log(`[stream] ✓ ${raw.source} for ${id}`);
-    return { streamUrl: raw.streamUrl, proxyHeaders: raw.proxyHeaders, source: raw.source, embedUrl, embedFallbacks };
+    return {
+      streamUrl:    raw.streamUrl,
+      proxyHeaders: raw.proxyHeaders,
+      source:       raw.source,
+      embedUrl,
+      embedFallbacks,
+    };
   }
 
   console.log(`[stream] ✗ all failed for ${id}`);
@@ -277,17 +306,14 @@ export async function GET(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Missing ?id=" }, { status: 400 });
 
-  // Cache hit
+  // Cache hit — only cached if a stream was found (never cache failures)
   const cached = serverCache.get(id);
   if (cached && cached.expires > Date.now()) {
     console.log(`[stream] cache hit ${id}`);
-    return NextResponse.json(cached.data, {
-      status: cached.data.streamUrl ? 200 : 404,
-      headers: { "X-Cache": "HIT" },
-    });
+    return NextResponse.json(cached.data, { status: 200, headers: { "X-Cache": "HIT" } });
   }
 
-  // In-flight dedup
+  // In-flight dedup — second request waits for the first
   if (serverInflight.has(id)) {
     console.log(`[stream] dedup wait ${id}`);
     const data = await serverInflight.get(id)!;
@@ -300,13 +326,16 @@ export async function GET(req: NextRequest) {
   // New extraction
   console.log(`[stream] id=${id}`);
   const promise = extractForId(id).then((data) => {
-    serverCache.set(id, { data, expires: Date.now() + CACHE_TTL });
+    // Only cache successes — failures should be retried
+    if (data.streamUrl) {
+      serverCache.set(id, { data: data as StreamResult, expires: Date.now() + CACHE_TTL });
+    }
     serverInflight.delete(id);
     return data;
   }).catch((err) => {
     serverInflight.delete(id);
     console.error("[stream] fatal:", err);
-    return embedOnly(id);
+    return makeEmbedOnly(id);
   });
 
   serverInflight.set(id, promise);
@@ -314,6 +343,6 @@ export async function GET(req: NextRequest) {
   const data = await promise;
   return NextResponse.json(data, {
     status: data.streamUrl ? 200 : 404,
-    headers: { "Cache-Control": "public, max-age=600" },
+    headers: { "Cache-Control": data.streamUrl ? "public, max-age=600" : "no-store" },
   });
 }
