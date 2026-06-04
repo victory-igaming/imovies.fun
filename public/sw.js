@@ -1,0 +1,1 @@
+// No service worker — this file exists only to silence the browser's automatic sw.js request.
