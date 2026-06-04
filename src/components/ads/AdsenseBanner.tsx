@@ -2,12 +2,6 @@
 
 import { useEffect, useRef } from "react";
 
-declare global {
-  interface Window {
-    adsbygoogle: any[];
-  }
-}
-
 export default function AdsenseBanner() {
   const adRef = useRef<HTMLModElement>(null);
 
