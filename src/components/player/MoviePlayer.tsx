@@ -94,13 +94,21 @@ export default function MoviePlayer({ movie }: Props) {
 
   // ── VideoPlayer fallback — retry with cache bust first, embed on second fail ──
   const handleNativeFallback = useCallback(() => {
+    // Remember where playback was — the remounted VideoPlayer starts fresh
+    // (new stream URL, new auth token, new player instance) and has no
+    // memory of position on its own. Without this, every fallback/retry
+    // looked like "the movie restarted from the beginning" even though the
+    // underlying cause was just a dead segment or expired token.
+    const resumeAt = watchTime;
+
     if (!bustCache) {
       // First failure: bust the cache and retry extraction
-      console.warn("[MoviePlayer] Stream failed — retrying with cache bust…");
+      console.warn(`[MoviePlayer] Stream failed — retrying with cache bust… (resume at ${resumeAt.toFixed(1)}s)`);
       setBustCache(true);
       setNativeSourceIdx(i => i + 1);
       setLoading(true);
       setSourceName("Retrying…");
+      if (resumeAt > 0) setSeekTo(resumeAt);
     } else {
       // Second failure: give up and switch to iframe embeds
       console.warn("[MoviePlayer] Retry also failed → switching to iframe embeds");
@@ -109,8 +117,11 @@ export default function MoviePlayer({ movie }: Props) {
       setSourceName("Embed");
       setBustCache(false);
       setLoading(true);
+      // Note: iframe embeds (StreamMoviePlayer) don't support seeking to a
+      // specific time — the underlying embed player controls that, so
+      // resumeAt can't be applied here.
     }
-  }, [bustCache]);
+  }, [bustCache, watchTime]);
 
   // ── Next Source (re-trigger native extraction with cache bust) ──────────────
   const handleNextSource = useCallback(() => {

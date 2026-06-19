@@ -104,15 +104,11 @@ async function rotateTorCircuit(): Promise<boolean> {
 
 // ── Sources ───────────────────────────────────────────────────────────────────
 function buildSources(mid: string | number) {
-  // AutoEmbed (player.autoembed.cc) removed — DNS resolution fails
-  // consistently (net::ERR_NAME_NOT_RESOLVED) on every single attempt
-  // across many different movie IDs, burning a full 15s timeout each time
-  // for zero chance of success. Re-add if/when the domain is confirmed
-  // resolvable again.
   return [
     { title: "VidLink",   url: `https://vidlink.pro/movie/${mid}?autoplay=1&player=jw&primaryColor=006fee` },
     { title: "VidLink 2", url: `https://vidlink.pro/movie/${mid}?autoplay=1&primaryColor=006fee` },
-    { title: "Videasy",   url: `https://player.videasy.to/movie/${mid}` },
+    { title: "Videasy",   url: `https://player.videasy.net/movie/${mid}` },
+    { title: "AutoEmbed", url: `https://player.autoembed.cc/embed/movie/${mid}` },
     { title: "Vidfast",   url: `https://vidfast.pro/movie/${mid}?autoPlay=true` },
     { title: "VidSrc v2", url: `https://vidsrc.cc/v2/embed/movie/${mid}?autoPlay=true` },
     { title: "VidSrc v3", url: `https://vidsrc.cc/v3/embed/movie/${mid}?autoPlay=true` },
@@ -215,40 +211,6 @@ async function findStream(embedUrl: string, timeoutMs = 15_000) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       if (result.url) break;
-
-      // Network request interception alone can miss cases where the player
-      // sets video.src directly via JS rather than issuing an observable
-      // fetch/XHR — e.g. native <video> src assignment, which some CDNs
-      // serve via range-request prefetching that doesn't always surface as
-      // a standard Playwright "request" event the same way. Poll the DOM
-      // directly as a fallback so we still capture the stream URL even when
-      // network interception misses it.
-      if (!result.url) {
-        try {
-          const domSrc = await page.evaluate(() => {
-            const video = document.querySelector("video");
-            if (video && video.src && video.src.length > 0) return video.src;
-            const source = document.querySelector("video source");
-            if (source && (source as HTMLSourceElement).src) return (source as HTMLSourceElement).src;
-            return null;
-          });
-          if (domSrc && (M3U8_RE.test(domSrc) || MP4_RE.test(domSrc)) && !SKIP_RE.test(domSrc)) {
-            result.url = domSrc;
-            result.referer = embedUrl;
-            // Network-intercepted captures get referer/origin straight from the
-            // request headers Chromium actually sent. DOM-polled captures have
-            // no such request to read from, so set a sensible default here —
-            // most embed CDNs (including go.itsdeskmate.com-style redirectors)
-            // referer-check against the embed page itself.
-            result.headers = {
-              referer: embedUrl,
-              origin:  new URL(embedUrl).origin,
-            };
-            break;
-          }
-        } catch { /* page may not be ready yet, ignore and keep polling */ }
-      }
-
       await new Promise((r) => setTimeout(r, 400));
     }
   } catch (err) {
@@ -283,29 +245,19 @@ export async function GET(req: NextRequest) {
   const sources = buildSources(id);
 
   // Overall deadline — even if every source times out individually, the whole
-  // request should never take minutes. With AutoEmbed removed (permanently
-  // dead DNS) and per-source timeout now capped to remaining budget, 45s is
-  // enough for ~3 full-timeout sources or more partial ones, without leaving
-  // users staring at a loading screen for a minute-plus.
-  const OVERALL_DEADLINE_MS = 45_000;
+  // request should never take minutes. 7 sources × 15s ≈ 105s worst case for
+  // one pass; cap total work (including rotation retry) well below that.
+  const OVERALL_DEADLINE_MS = 75_000;
   const startedAt = Date.now();
   const timeLeft  = () => OVERALL_DEADLINE_MS - (Date.now() - startedAt);
 
   // Pass 1: try every source with the current Tor circuit
   for (const src of sources) {
-    const remaining = timeLeft();
-    if (remaining <= 0) {
+    if (timeLeft() <= 0) {
       console.warn("[stream] overall deadline reached — stopping pass 1 early");
       break;
     }
-    // Cap this source's own timeout to whatever budget is actually left —
-    // previously every source always got the full default 15s regardless
-    // of remaining budget, so the deadline check between sources didn't
-    // actually prevent overrunning it (6 sources × 15s ≈ 90s worst case
-    // even with a 75s deadline). Leave a 1s floor so we don't fire a
-    // near-zero-timeout request that's guaranteed to fail instantly.
-    const perSourceTimeout = Math.max(1_000, Math.min(15_000, remaining));
-    const { streamUrl, referer, proxyHeaders, usedProxy } = await findStream(src.url, perSourceTimeout);
+    const { streamUrl, referer, proxyHeaders, usedProxy } = await findStream(src.url);
     if (!streamUrl) {
       console.warn(`[stream] ✗ ${src.title} — no stream found`);
       continue;
@@ -328,13 +280,11 @@ export async function GET(req: NextRequest) {
       await new Promise((r) => setTimeout(r, Math.min(8_000, Math.max(0, timeLeft() - 5_000))));
 
       for (const src of sources) {
-        const remaining = timeLeft();
-        if (remaining <= 0) {
+        if (timeLeft() <= 0) {
           console.warn("[stream] overall deadline reached — stopping retry pass early");
           break;
         }
-        const perSourceTimeout = Math.max(1_000, Math.min(15_000, remaining));
-        const { streamUrl, referer, proxyHeaders, usedProxy } = await findStream(src.url, perSourceTimeout);
+        const { streamUrl, referer, proxyHeaders, usedProxy } = await findStream(src.url);
         if (!streamUrl) {
           console.warn(`[stream] ✗ ${src.title} (retry) — no stream found`);
           continue;

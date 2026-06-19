@@ -100,7 +100,11 @@ export default function VideoPlayer({
   // restarting the whole player (and playback position) for a single
   // dropped segment request or a transient proxy hiccup.
   const networkErrRetriesRef = useRef(0);
-  const MAX_NETWORK_RETRIES  = 3;
+  const MAX_NETWORK_RETRIES  = 5;
+  // Same idea as networkErrRetriesRef, but for the native <video> error path
+  // (Safari/Chromium native HLS) which has no HLS.js retry machinery of its own.
+  const nativeErrRetriesRef = useRef(0);
+  const MAX_NATIVE_RETRIES  = 3;
 
   const [phase,        setPhase]        = useState<Phase>("fetching");
   const [fetchLabel,   setFetchLabel]   = useState("Extracting stream…");
@@ -232,14 +236,28 @@ export default function VideoPlayer({
     setSubTracks([]);
     setActiveSubIdx(-1);
     networkErrRetriesRef.current = 0;
+    nativeErrRetriesRef.current  = 0;
 
     const proxied = buildProxyUrl(streamUrl, proxyHeaders, usedProxyRef.current);
     const isHls   = /\.m3u8/i.test(streamUrl);
     const isMp4   = /\.(mp4|mkv|webm)/i.test(streamUrl);
 
     if (isHls) {
-      if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        // Safari native HLS
+      // canPlayType("application/vnd.apple.mpegurl") is unreliable as a sole
+      // signal — some Chromium/Edge builds report a truthy "maybe" even
+      // though their native demuxer can't reliably parse this stream (proxied,
+      // re-encoded HLS from a third-party CDN), which surfaced as repeated
+      // DEMUXER_ERROR_COULD_NOT_PARSE with zero real recovery — the native
+      // <video> error path has none of HLS.js's robust fragment-retry logic.
+      // Only take the native-HLS branch on genuine Safari/WebKit, where this
+      // is actually the right (often only) playback path; force HLS.js
+      // everywhere else, including Chromium-based browsers that merely claim
+      // partial support.
+      const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+      const isRealSafari = /^((?!chrome|android).)*safari/i.test(ua) && !/edg|chromium|crios|fxios/i.test(ua);
+
+      if (isRealSafari && video.canPlayType("application/vnd.apple.mpegurl")) {
+        // Genuine Safari native HLS
         hlsActiveRef.current = false;
         video.src   = proxied;
         video.muted = muted;
@@ -257,7 +275,16 @@ export default function VideoPlayer({
         const hls = new Hls({
           enableWorker: true, maxBufferLength: 30, maxMaxBufferLength: 60,
           fragLoadingTimeOut: 30_000, manifestLoadingTimeOut: 20_000,
-          levelLoadingTimeOut: 20_000, 
+          levelLoadingTimeOut: 20_000,
+          // Our proxy now fails fast (~10-12s worst case) instead of hanging
+          // up to 90s, so give HLS.js's own internal fragment retry more
+          // attempts to ride out a slow/flaky upstream CDN without ever
+          // reaching the fatal-error path that used to trigger a full restart.
+          fragLoadingMaxRetry: 6,
+          fragLoadingRetryDelay: 500,
+          fragLoadingMaxRetryTimeout: 20_000,
+          manifestLoadingMaxRetry: 4,
+          levelLoadingMaxRetry: 4,
         });
         hls.subtitleDisplay = true;
         hlsRef.current       = hls;
@@ -311,7 +338,21 @@ export default function VideoPlayer({
         });
 
         hls.on(Hls.Events.ERROR, (_: any, data: any) => {
-          if (!data.fatal || !activeRef.current) return;
+          if (!activeRef.current) return;
+
+          // Non-fatal fragment-level errors (a single dead/blocked segment,
+          // e.g. a Tor exit node 502ing on one specific URL): log it and let
+          // HLS.js's own internal fragment retry handle it. Don't count these
+          // toward the fatal-networkError retry budget below — a string of
+          // skippable single-fragment errors shouldn't exhaust that budget
+          // and trigger a full player restart.
+          if (!data.fatal) {
+            if (data.details === "fragLoadError" || data.details === "fragLoadTimeOut") {
+              console.warn(`[VideoPlayer] non-fatal ${data.details} — HLS.js will retry/skip this fragment`);
+            }
+            return;
+          }
+
           console.error("[VideoPlayer] HLS fatal:", data.type, data.details);
 
           if (data.type === "mediaError") {
@@ -417,8 +458,24 @@ export default function VideoPlayer({
   useEffect(() => {
     if (seekTo == null) return;
     const v = videoRef.current;
-    if (v) v.currentTime = seekTo;
-    onSeekComplete?.();
+    if (!v) { onSeekComplete?.(); return; }
+
+    // If the player is still fetching a new stream (e.g. right after a
+    // fallback/retry), readyState will be 0 and setting currentTime now
+    // would be silently dropped by the browser. Wait for enough metadata
+    // to be available before seeking.
+    if (v.readyState >= 1) {
+      v.currentTime = seekTo;
+      onSeekComplete?.();
+    } else {
+      const onMeta = () => {
+        v.removeEventListener("loadedmetadata", onMeta);
+        v.currentTime = seekTo;
+        onSeekComplete?.();
+      };
+      v.addEventListener("loadedmetadata", onMeta);
+      return () => v.removeEventListener("loadedmetadata", onMeta);
+    }
   }, [seekTo]); // eslint-disable-line
 
   useEffect(() => {
@@ -442,7 +499,7 @@ export default function VideoPlayer({
         poster={poster ? `https://image.tmdb.org/t/p/w780${poster}` : undefined}
         playsInline
         muted={muted}
-        onTimeUpdate={() => { const v = videoRef.current; if (v) onTimeUpdate?.(v.currentTime); }}
+        onTimeUpdate={() => { const v = videoRef.current; if (v) { onTimeUpdate?.(v.currentTime); nativeErrRetriesRef.current = 0; } }}
         onDurationChange={() => { const v = videoRef.current; if (v && isFinite(v.duration)) onDurationChange?.(v.duration); }}
         onError={(e) => {
           // Suppress errors while HLS.js is active (it handles its own errors)
@@ -450,8 +507,38 @@ export default function VideoPlayer({
           // Suppress errors during subtitle track injection
           if (subInjectRef.current) return;
           if (phase !== "playing") return;
-          const msg = (e.target as HTMLVideoElement).error?.message ?? "unknown";
+
+          const video = e.target as HTMLVideoElement;
+          const msg   = video.error?.message ?? "unknown";
           console.error("[VideoPlayer] native error:", msg);
+
+          // Native HLS (Safari, some Chromium builds) has no built-in retry
+          // like HLS.js does. A transient demuxer/network error here — often
+          // caused by a slow upstream proxy returning a partial/late response
+          // — shouldn't immediately restart the whole player. Try reloading
+          // the same src a few times first, restoring playback position
+          // afterward (reassigning .src alone resets currentTime to 0, which
+          // looked like "the movie replaying from the beginning").
+          if (nativeErrRetriesRef.current < MAX_NATIVE_RETRIES) {
+            nativeErrRetriesRef.current++;
+            const resumeAt = video.currentTime;
+            console.warn(`[VideoPlayer] native retry ${nativeErrRetriesRef.current}/${MAX_NATIVE_RETRIES} — resuming at ${resumeAt.toFixed(1)}s`);
+            const src = video.src;
+            video.removeAttribute("src");
+            video.load();
+            setTimeout(() => {
+              if (!activeRef.current) return;
+              video.src = src;
+              const onLoadedMeta = () => {
+                video.removeEventListener("loadedmetadata", onLoadedMeta);
+                if (resumeAt > 0 && isFinite(resumeAt)) video.currentTime = resumeAt;
+                if (playing) video.play().catch(() => {});
+              };
+              video.addEventListener("loadedmetadata", onLoadedMeta);
+            }, 500 * nativeErrRetriesRef.current);
+            return;
+          }
+
           doFallback();
         }}
       />
